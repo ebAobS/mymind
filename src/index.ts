@@ -65,6 +65,7 @@ const docMindMapThemeName = "docMindMapTheme"; // 文档思维导图主题
 const showAssociativeLineName = "showAssociativeLine"; // 是否显示文档关联线
 const showSaveWarningName = "showSaveWarning"; // 是否显示保存警告
 const headingLevelsName = "headingLevels"; // Markdown 标题级数
+const enableDebugLogName = "enableDebugLog"; // 是否启用调试日志
 const initialExpandLevelName = "initialExpandLevel"; // 兼容旧版本，后续可删除
 const darkModeClassName = "markmap-dark";
 
@@ -95,6 +96,26 @@ export default class SiYuanDocTreePlugin extends Plugin {
     private isInitializing: boolean = false; // 标记是否正在初始化，防止初始渲染时触发重命名
     private documentObserver: MutationObserver | null = null; // 文档变化监听器
     typedI18n: typeof zh_CN
+
+    /**
+     * 条件日志输出 - 仅在启用调试日志时输出
+     */
+    private debugLog(...args: any[]) {
+        if (this.settingUtils?.get(enableDebugLogName)) {
+            console.log('[MyMind]', ...args);
+        }
+    }
+
+    private debugWarn(...args: any[]) {
+        if (this.settingUtils?.get(enableDebugLogName)) {
+            console.warn('[MyMind]', ...args);
+        }
+    }
+
+    private debugError(...args: any[]) {
+        // 错误日志始终输出，但添加前缀
+        console.error('[MyMind]', ...args);
+    }
 
     async onload() {
         this.typedI18n = this.i18n as any
@@ -253,6 +274,15 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 }
             }
         });
+
+        // 启用调试日志
+        this.settingUtils.addItem({
+            key: enableDebugLogName,
+            value: false,
+            type: "checkbox",
+            title: "启用调试日志",
+            description: "开启后会在控制台输出详细的调试日志，用于问题排查。默认关闭以提升性能和减少内存占用。"
+        });
         
         await this.settingUtils.load(); //导入配置并合并
     }
@@ -274,6 +304,12 @@ export default class SiYuanDocTreePlugin extends Plugin {
 
         // 监听文档变化，自动初始化新插入的思维导图块
         this.observeDocumentChanges();
+
+        // 定时检测文档刷新后需要重新加载的思维导图块
+        // 每5秒检查一次是否有未加载的思维导图块
+        setInterval(() => {
+            this.checkAndReloadMindMaps();
+        }, 5000);
 
     }
 
@@ -310,7 +346,19 @@ export default class SiYuanDocTreePlugin extends Plugin {
             }
         });
         
-        // 4. 设置
+        // 分隔线
+        menu.addSeparator();
+        
+        // 4. 检测并加载嵌入思维导图
+        menu.addItem({
+            icon: "iconRefresh",
+            label: "检测并加载嵌入思维导图",
+            click: () => {
+                this.reloadAllEmbeddedMindMaps();
+            }
+        });
+        
+        // 5. 设置
         menu.addItem({
             icon: "iconSettings",
             label: "设置",
@@ -337,13 +385,13 @@ export default class SiYuanDocTreePlugin extends Plugin {
      */
     async fetchDocumentTreeRecursive(notebookId: string, path: string = "/", depth: number = 0): Promise<MindMapNode[]> {
         try {
-            console.log(`[深度${depth}] 获取路径 ${path} 下的文档...`);
+            this.debugLog(`[深度${depth}] 获取路径 ${path} 下的文档...`);
             const result = await api.listDocsByPath(notebookId, path);
             
-            console.log(`[深度${depth}] API 返回结果:`, result);
+            this.debugLog(`[深度${depth}] API 返回结果:`, result);
             
             if (!result || !result.files || result.files.length === 0) {
-                console.log(`[深度${depth}] 路径 ${path} 下没有文档`);
+                this.debugLog(`[深度${depth}] 路径 ${path} 下没有文档`);
                 return [];
             }
 
@@ -352,7 +400,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             for (const file of result.files) {
                 // 只处理文档类型
                 if (!file.id) {
-                    console.log(`[深度${depth}] 跳过非文档项:`, file);
+                    this.debugLog(`[深度${depth}] 跳过非文档项:`, file);
                     continue;
                 }
                 
@@ -367,7 +415,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                     docName = docName.substring(0, 47) + '...';
                 }
                 
-                console.log(`[深度${depth}] 处理文档: ${docName} (${file.id}), subFileCount: ${file.subFileCount}`);
+                this.debugLog(`[深度${depth}] 处理文档: ${docName} (${file.id}), subFileCount: ${file.subFileCount}`);
                 
                 const node: MindMapNode = {
                     data: {
@@ -383,37 +431,37 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 
                 // 只有当 subFileCount > 0 时才递归获取子文档
                 if (file.subFileCount && file.subFileCount > 0) {
-                    console.log(`[深度${depth}] 文档 ${docName} 有 ${file.subFileCount} 个子文档，开始递归...`);
+                    this.debugLog(`[深度${depth}] 文档 ${docName} 有 ${file.subFileCount} 个子文档，开始递归...`);
                     try {
                         // 使用文档路径（去掉.sy后缀）作为子目录路径
                         let childPath = file.path;
                         if (childPath.endsWith('.sy')) {
                             childPath = childPath.slice(0, -3); // 去掉 .sy 后缀
                         }
-                        console.log(`[深度${depth}] 使用路径: ${childPath}`);
+                        this.debugLog(`[深度${depth}] 使用路径: ${childPath}`);
                         
                         const children = await this.fetchDocumentTreeRecursive(notebookId, childPath, depth + 1);
                         if (children.length > 0) {
                             node.children = children;
-                            console.log(`[深度${depth}] 文档 ${docName} 获取到 ${children.length} 个子文档`);
+                            this.debugLog(`[深度${depth}] 文档 ${docName} 获取到 ${children.length} 个子文档`);
                         } else {
-                            console.log(`[深度${depth}] 文档 ${docName} 实际没有子文档（可能是数据不一致）`);
+                            this.debugLog(`[深度${depth}] 文档 ${docName} 实际没有子文档（可能是数据不一致）`);
                         }
                     } catch (childError) {
-                        console.error(`[深度${depth}] 获取文档 ${docName} 的子文档失败:`, childError);
+                        this.debugError(`[深度${depth}] 获取文档 ${docName} 的子文档失败:`, childError);
                         // 继续处理其他文档，不中断
                     }
                 } else {
-                    console.log(`[深度${depth}] 文档 ${docName} 没有子文档`);
+                    this.debugLog(`[深度${depth}] 文档 ${docName} 没有子文档`);
                 }
                 
                 nodes.push(node);
             }
             
-            console.log(`[深度${depth}] 路径 ${path} 共返回 ${nodes.length} 个文档节点`);
+            this.debugLog(`[深度${depth}] 路径 ${path} 共返回 ${nodes.length} 个文档节点`);
             return nodes;
         } catch (error) {
-            console.error(`[深度${depth}] 获取路径 ${path} 下的文档失败:`, error);
+            this.debugError(`[深度${depth}] 获取路径 ${path} 下的文档失败:`, error);
             return [];
         }
     }
@@ -442,16 +490,16 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 children: []
             };
 
-            console.log('开始构建文档树，笔记本数量:', notebooks.length);
+            this.debugLog('开始构建文档树，笔记本数量:', notebooks.length);
 
             // 遍历每个笔记本
             for (const notebook of notebooks) {
                 if (notebook.closed) {
-                    console.log(`跳过已关闭的笔记本: ${notebook.name}`);
+                    this.debugLog(`跳过已关闭的笔记本: ${notebook.name}`);
                     continue; // 跳过已关闭的笔记本
                 }
 
-                console.log(`处理笔记本: ${notebook.name} (${notebook.id})`);
+                this.debugLog(`处理笔记本: ${notebook.name} (${notebook.id})`);
 
                 const notebookNode: MindMapNode = {
                     data: {
@@ -468,16 +516,16 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 const docs = await this.fetchDocumentTreeRecursive(notebook.id, "/");
                 notebookNode.children = docs;
                 
-                console.log(`笔记本 ${notebook.name} 的根文档数量:`, docs.length);
+                this.debugLog(`笔记本 ${notebook.name} 的根文档数量:`, docs.length);
 
                 // 将笔记本节点添加到工作空间节点
                 rootNode.children.push(notebookNode);
             }
 
-            console.log('文档树构建完成');
+            this.debugLog('文档树构建完成');
             return rootNode;
         } catch (error) {
-            console.error("构建文档树失败:", error);
+            this.debugError("构建文档树失败:", error);
             showMessage("构建文档树失败: " + error.message, 5000, "error");
             return {
                 data: {
@@ -518,7 +566,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
         const linkMap = new Map<string, Set<string>>(); // 用于去重：from -> Set<to>
         const docIdArray = Array.from(docIds);
         
-        console.log(`开始获取 ${docIdArray.length} 个文档的链接关系...`);
+        this.debugLog(`开始获取 ${docIdArray.length} 个文档的链接关系...`);
         
         try {
             // 方法1: 查询文档内所有块的出链（root_id 是出链文档）
@@ -526,10 +574,10 @@ export default class SiYuanDocTreePlugin extends Plugin {
             const docIdList = docIdArray.map(id => `'${id}'`).join(',');
             const sql = `SELECT DISTINCT root_id, def_block_root_id FROM refs WHERE root_id IN (${docIdList}) AND def_block_root_id IS NOT NULL AND def_block_root_id != ''`;
             
-            console.log('执行 SQL 查询:', sql);
+            this.debugLog('执行 SQL 查询:', sql);
             const refs = await api.sql(sql);
             
-            console.log(`SQL 查询返回 ${refs ? refs.length : 0} 条结果`);
+            this.debugLog(`SQL 查询返回 ${refs ? refs.length : 0} 条结果`);
             
             if (refs && refs.length > 0) {
                 for (const ref of refs) {
@@ -561,15 +609,15 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 });
             }
             
-            console.log(`共发现 ${links.length} 条文档链接关系`);
+            this.debugLog(`共发现 ${links.length} 条文档链接关系`);
             
             // 打印前几条链接关系用于调试
             if (links.length > 0) {
-                console.log('前 5 条链接关系:', links.slice(0, 5));
+                this.debugLog('前 5 条链接关系:', links.slice(0, 5));
             }
             
         } catch (error) {
-            console.error('获取文档链接关系失败:', error);
+            this.debugError('获取文档链接关系失败:', error);
         }
         
         return links;
@@ -582,17 +630,17 @@ export default class SiYuanDocTreePlugin extends Plugin {
      */
     private async loadAssociativeLines(docTree: MindMapNode, showSuccessMessage: boolean = true): Promise<void> {
         try {
-            console.log('===== 开始加载文档关联线 =====');
+            this.debugLog('===== 开始加载文档关联线 =====');
             
             // 检查思维导图实例
             if (!this.mindMap) {
-                console.error('思维导图实例不存在');
+                this.debugError('思维导图实例不存在');
                 return;
             }
             
             // 检查插件
             if (!this.mindMap.associativeLine) {
-                console.error('关联线插件未加载！');
+                this.debugError('关联线插件未加载！');
                 if (showSuccessMessage) {
                     showMessage('关联线插件未加载，无法显示文档链接', 3000, 'error');
                 }
@@ -602,14 +650,14 @@ export default class SiYuanDocTreePlugin extends Plugin {
             // 收集所有文档ID
             const docIds = new Set<string>();
             this.collectDocumentIds(docTree, docIds);
-            console.log(`收集到 ${docIds.size} 个文档节点`);
+            this.debugLog(`收集到 ${docIds.size} 个文档节点`);
             
             // 获取文档之间的链接关系
             const links = await this.getDocumentLinks(docIds);
-            console.log(`发现 ${links.length} 条文档链接关系`);
+            this.debugLog(`发现 ${links.length} 条文档链接关系`);
             
             if (links.length === 0) {
-                console.log('没有发现文档之间的链接关系');
+                this.debugLog('没有发现文档之间的链接关系');
                 return;
             }
             
@@ -620,9 +668,9 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 showMessage(`已添加 ${links.length} 条文档关联线`, 2000, 'info');
             }
             
-            console.log('===== 文档关联线加载完成 =====');
+            this.debugLog('===== 文档关联线加载完成 =====');
         } catch (error) {
-            console.error('加载关联线失败:', error);
+            this.debugError('加载关联线失败:', error);
             if (showSuccessMessage) {
                 showMessage('加载关联线失败: ' + error.message, 3000, 'error');
             }
@@ -637,12 +685,12 @@ export default class SiYuanDocTreePlugin extends Plugin {
      */
     private async addAssociativeLines(mindMap: any, links: Array<{ from: string, to: string }>, docTree: MindMapNode): Promise<void> {
         if (!mindMap || !links || links.length === 0) {
-            console.log('没有需要添加的关联线');
+            this.debugLog('没有需要添加的关联线');
             return;
         }
 
-        console.log(`准备添加 ${links.length} 条关联线...`);
-        console.log('关联线插件实例:', mindMap.associativeLine);
+        this.debugLog(`准备添加 ${links.length} 条关联线...`);
+        this.debugLog('关联线插件实例:', mindMap.associativeLine);
 
         // 等待思维导图完全渲染
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -656,7 +704,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 const fromUid = `doc-${link.from}`;
                 const toUid = `doc-${link.to}`;
 
-                console.log(`\n尝试添加关联线: ${fromUid} -> ${toUid}`);
+                this.debugLog(`\n尝试添加关联线: ${fromUid} -> ${toUid}`);
 
                 // 查找对应的节点 - 尝试多种查找方式
                 let fromNode = null;
@@ -666,7 +714,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 if (mindMap.renderer && typeof mindMap.renderer.findNodeByUid === 'function') {
                     fromNode = mindMap.renderer.findNodeByUid(fromUid);
                     toNode = mindMap.renderer.findNodeByUid(toUid);
-                    console.log('通过 renderer.findNodeByUid 查找节点:', !!fromNode, !!toNode);
+                    this.debugLog('通过 renderer.findNodeByUid 查找节点:', !!fromNode, !!toNode);
                 }
                 
                 // 方式2: 如果方式1失败，尝试通过 renderer.root 递归查找
@@ -690,54 +738,54 @@ export default class SiYuanDocTreePlugin extends Plugin {
                     if (!toNode && mindMap.renderer && mindMap.renderer.root) {
                         toNode = findNode(mindMap.renderer.root, toUid);
                     }
-                    console.log('通过递归查找节点:', !!fromNode, !!toNode);
+                    this.debugLog('通过递归查找节点:', !!fromNode, !!toNode);
                 }
 
                 if (fromNode && toNode) {
-                    console.log('找到两个节点，准备添加关联线');
-                    console.log('fromNode:', fromNode);
-                    console.log('toNode:', toNode);
+                    this.debugLog('找到两个节点，准备添加关联线');
+                    this.debugLog('fromNode:', fromNode);
+                    this.debugLog('toNode:', toNode);
                     
                     // 直接调用 associativeLine 的方法添加关联线
                     try {
                         // 使用官方文档推荐的方法
                         mindMap.associativeLine.addLine(fromNode, toNode);
-                        console.log('✓ 成功添加关联线');
+                        this.debugLog('✓ 成功添加关联线');
                         successCount++;
                     } catch (err) {
-                        console.error('调用 addLine 失败:', err);
+                        this.debugError('调用 addLine 失败:', err);
                         
                         // 尝试其他可能的方法
                         try {
                             if (typeof mindMap.associativeLine.createLine === 'function') {
                                 mindMap.associativeLine.createLine(fromNode, toNode);
-                                console.log('✓ 使用 createLine 成功');
+                                this.debugLog('✓ 使用 createLine 成功');
                                 successCount++;
                             } else if (typeof mindMap.associativeLine.createLineFromNodeToNode === 'function') {
                                 mindMap.associativeLine.createLineFromNodeToNode(fromNode, toNode);
-                                console.log('✓ 使用 createLineFromNodeToNode 成功');
+                                this.debugLog('✓ 使用 createLineFromNodeToNode 成功');
                                 successCount++;
                             } else {
-                                console.error('× 找不到可用的添加关联线方法');
-                                console.error('可用方法:', Object.getOwnPropertyNames(mindMap.associativeLine));
+                                this.debugError('× 找不到可用的添加关联线方法');
+                                this.debugError('可用方法:', Object.getOwnPropertyNames(mindMap.associativeLine));
                                 failCount++;
                             }
                         } catch (err2) {
-                            console.error('× 所有方法都失败:', err2);
+                            this.debugError('× 所有方法都失败:', err2);
                             failCount++;
                         }
                     }
                 } else {
-                    console.warn(`× 无法找到节点: from=${fromUid}(${!!fromNode}), to=${toUid}(${!!toNode})`);
+                    this.debugWarn(`× 无法找到节点: from=${fromUid}(${!!fromNode}), to=${toUid}(${!!toNode})`);
                     
                     // 打印所有可用节点用于调试
                     if (!fromNode || !toNode) {
-                        console.log('打印所有节点的 uid 用于调试:');
+                        this.debugLog('打印所有节点的 uid 用于调试:');
                         const printAllUids = (node: any, prefix: string = '') => {
                             if (!node) return;
                             const nodeData = node.getData ? node.getData() : node.data;
                             if (nodeData && nodeData.uid) {
-                                console.log(`${prefix}${nodeData.uid}`);
+                                this.debugLog(`${prefix}${nodeData.uid}`);
                             }
                             if (node.children) {
                                 node.children.forEach((child: any) => printAllUids(child, prefix + '  '));
@@ -751,21 +799,21 @@ export default class SiYuanDocTreePlugin extends Plugin {
                     failCount++;
                 }
             } catch (error) {
-                console.error(`× 添加关联线失败 (${link.from} -> ${link.to}):`, error);
+                this.debugError(`× 添加关联线失败 (${link.from} -> ${link.to}):`, error);
                 failCount++;
             }
         }
 
-        console.log(`\n关联线添加完成: 成功 ${successCount} 条, 失败 ${failCount} 条`);
+        this.debugLog(`\n关联线添加完成: 成功 ${successCount} 条, 失败 ${failCount} 条`);
         
         // 重新渲染所有关联线
         try {
             if (mindMap.associativeLine && typeof mindMap.associativeLine.renderAllLines === 'function') {
                 mindMap.associativeLine.renderAllLines();
-                console.log('✓ 已调用 renderAllLines 重新渲染关联线');
+                this.debugLog('✓ 已调用 renderAllLines 重新渲染关联线');
             }
         } catch (error) {
-            console.error('× 渲染关联线失败:', error);
+            this.debugError('× 渲染关联线失败:', error);
         }
         
         // 设置关联线为只读（不可编辑）
@@ -774,13 +822,13 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 // 尝试设置只读属性
                 if ('readonly' in mindMap.associativeLine) {
                     mindMap.associativeLine.readonly = true;
-                    console.log('✓ 已设置关联线为只读模式');
+                    this.debugLog('✓ 已设置关联线为只读模式');
                 } else {
-                    console.log('ⓘ 关联线插件不支持 readonly 属性');
+                    this.debugLog('ⓘ 关联线插件不支持 readonly 属性');
                 }
             }
         } catch (error) {
-            console.error('× 设置只读模式失败:', error);
+            this.debugError('× 设置只读模式失败:', error);
         }
     }
 
@@ -788,11 +836,11 @@ export default class SiYuanDocTreePlugin extends Plugin {
      * 处理拖拽结束事件（由 simple-mind-map 的 Drag 插件调用）
      */
     private async handleDragEnd({ overlapNodeUid, prevNodeUid, nextNodeUid, beingDragNodeList }: any): Promise<boolean> {
-        console.log('拖拽结束:', { overlapNodeUid, prevNodeUid, nextNodeUid, beingDragNodeList });
+        this.debugLog('拖拽结束:', { overlapNodeUid, prevNodeUid, nextNodeUid, beingDragNodeList });
 
         // 只处理单节点拖拽
         if (beingDragNodeList.length !== 1) {
-            console.log('多节点拖拽，暂不同步到思源');
+            this.debugLog('多节点拖拽，暂不同步到思源');
             return false; // 允许默认拖拽
         }
 
@@ -803,8 +851,8 @@ export default class SiYuanDocTreePlugin extends Plugin {
         const originalParent = draggedNode.parent;
         const originalParentData = originalParent ? originalParent.getData() : null;
         
-        console.log('拖拽节点数据:', draggedData);
-        console.log('原父节点数据:', originalParentData);
+        this.debugLog('拖拽节点数据:', draggedData);
+        this.debugLog('原父节点数据:', originalParentData);
 
         // 检查是否可以移动
         if (draggedData.isWorkspace || draggedData.isNotebook) {
@@ -820,7 +868,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             // 拖拽到某个节点上
             newParentNode = this.mindMap.renderer.findNodeByUid(overlapNodeUid);
             newParentData = newParentNode ? newParentNode.getData() : null;
-            console.log('拖拽到节点上，目标节点:', newParentData);
+            this.debugLog('拖拽到节点上，目标节点:', newParentData);
         } else if (prevNodeUid || nextNodeUid) {
             // 拖拽到节点之间，通过前后节点推断父节点
             const refNodeUid = prevNodeUid || nextNodeUid;
@@ -828,13 +876,13 @@ export default class SiYuanDocTreePlugin extends Plugin {
             if (refNode && refNode.parent) {
                 newParentNode = refNode.parent;
                 newParentData = newParentNode.getData();
-                console.log('拖拽到节点之间，推断的父节点:', newParentData);
+                this.debugLog('拖拽到节点之间，推断的父节点:', newParentData);
             }
         }
 
         // 如果无法确定新父节点，允许默认拖拽
         if (!newParentData) {
-            console.log('无法确定新父节点，允许默认拖拽');
+            this.debugLog('无法确定新父节点，允许默认拖拽');
             return false;
         }
 
@@ -849,7 +897,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
         const newParentUid = newParentData.uid;
         
         if (originalParentUid === newParentUid) {
-            console.log('父节点未发生变化，只是调整顺序，允许默认拖拽');
+            this.debugLog('父节点未发生变化，只是调整顺序，允许默认拖拽');
             return false; // 允许默认拖拽
         }
 
@@ -858,10 +906,10 @@ export default class SiYuanDocTreePlugin extends Plugin {
             const dragDocId = draggedData.id;
             const targetNotebookId = newParentData.notebookId;
             
-            console.log('=== 开始移动文档（父节点变化） ===');
-            console.log('拖拽节点:', draggedData.text);
-            console.log('原父节点:', originalParentData ? originalParentData.text : 'null');
-            console.log('新父节点:', newParentData.text);
+            this.debugLog('=== 开始移动文档（父节点变化） ===');
+            this.debugLog('拖拽节点:', draggedData.text);
+            this.debugLog('原父节点:', originalParentData ? originalParentData.text : 'null');
+            this.debugLog('新父节点:', newParentData.text);
             
             // 确定目标文档 ID
             let targetDocId: string | null = null;
@@ -869,11 +917,11 @@ export default class SiYuanDocTreePlugin extends Plugin {
             if (newParentData.isNotebook) {
                 // 如果新父节点是笔记本，移动到笔记本根目录
                 targetDocId = null;
-                console.log('移动到笔记本根目录');
+                this.debugLog('移动到笔记本根目录');
             } else {
                 // 如果新父节点是文档，移动到该文档下
                 targetDocId = newParentData.id;
-                console.log('移动到文档下，目标文档ID:', targetDocId);
+                this.debugLog('移动到文档下，目标文档ID:', targetDocId);
             }
 
             // 调用API移动文档
@@ -883,7 +931,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
 
             return false; // 允许默认拖拽效果
         } catch (error) {
-            console.error('移动文档失败:', error);
+            this.debugError('移动文档失败:', error);
             showMessage('移动文档失败: ' + error.message, 5000, 'error');
             return true; // 取消默认拖拽
         }
@@ -902,7 +950,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 // 清除旧的关联线
                 if (this.mindMap.associativeLine && typeof this.mindMap.associativeLine.clearAllLines === 'function') {
                     this.mindMap.associativeLine.clearAllLines();
-                    console.log('已清除旧的关联线');
+                    this.debugLog('已清除旧的关联线');
                 }
                 
                 this.mindMap.setData(docTree);
@@ -910,7 +958,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 
                 // 重新初始化节点映射
                 this.lastNodeMap = this.updateNodeMap(this.mindMap.getData());
-                console.log('思维导图已刷新，节点数量:', this.lastNodeMap.size);
+                this.debugLog('思维导图已刷新，节点数量:', this.lastNodeMap.size);
                 
                 // 重新添加关联线（根据复选框状态决定）
                 setTimeout(async () => {
@@ -922,7 +970,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 }, 1000);
                 
             } catch (error) {
-                console.error('刷新思维导图失败:', error);
+                this.debugError('刷新思维导图失败:', error);
                 showMessage('刷新思维导图失败: ' + error.message, 3000, 'error');
             }
         }
@@ -999,11 +1047,11 @@ export default class SiYuanDocTreePlugin extends Plugin {
 
                 // 获取展开层级配置
                 const expandLevel = this.settingUtils.get(docTreeExpandLevelName) ?? 3;
-                console.log('文档树思维导图展开层级:', expandLevel);
+                this.debugLog('文档树思维导图展开层级:', expandLevel);
                 
                 // 获取主题配置
                 const themeName = this.settingUtils.get(docTreeThemeName) || 'default';
-                console.log('文档树思维导图主题:', themeName);
+                this.debugLog('文档树思维导图主题:', themeName);
                 
                 // 预处理数据：根据展开层级设置节点展开状态
                 this.setNodeExpandState(docTree, expandLevel, 0);
@@ -1030,12 +1078,12 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 } as any);
                 
                 // 检查 AssociativeLine 插件是否已加载
-                console.log('MindMap 实例创建完成');
-                console.log('associativeLine 插件是否存在:', !!this.mindMap.associativeLine);
+                this.debugLog('MindMap 实例创建完成');
+                this.debugLog('associativeLine 插件是否存在:', !!this.mindMap.associativeLine);
                 if (this.mindMap.associativeLine) {
-                    console.log('associativeLine 可用方法:', Object.keys(this.mindMap.associativeLine));
+                    this.debugLog('associativeLine 可用方法:', Object.keys(this.mindMap.associativeLine));
                 }
-                console.log('文档树展开层级已预设:', expandLevel);
+                this.debugLog('文档树展开层级已预设:', expandLevel);
 
                 
                 // 监听节点创建事件
@@ -1064,7 +1112,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             }, 100);
             
         } catch (error) {
-            console.error("打开文档树思维导图失败:", error);
+            this.debugError("打开文档树思维导图失败:", error);
             showMessage("打开文档树思维导图失败: " + error.message, 5000, "error");
         }
     }
@@ -1101,6 +1149,22 @@ export default class SiYuanDocTreePlugin extends Plugin {
         
         // 清理暗黑模式样式类
         this.cleanDarkModeClass();
+    }
+
+    /**
+     * 插件卸载时清理配置文件
+     */
+    async uninstall() {
+        // 删除插件配置文件
+        try {
+            if (this.settingUtils && this.settingUtils.file) {
+                // 删除配置文件
+                await this.removeData(this.settingUtils.file);
+                this.debugLog('插件配置文件已删除');
+            }
+        } catch (error) {
+            this.debugError('删除配置文件失败:', error);
+        }
     }
 
     private initDarkTheme() {
@@ -1170,7 +1234,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             showMessage(`已打开文档: ${nodeData.text}`, 1500, 'info');
             
         } catch (error) {
-            console.error('打开文档失败:', error);
+            this.debugError('打开文档失败:', error);
             showMessage(`打开文档失败: ${error.message}`, 3000, 'error');
         }
     }
@@ -1199,7 +1263,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             this.lastNodeMap = this.updateNodeMap(this.mindMap.getData());
             // 结束初始化标志
             this.isInitializing = false;
-            console.log('文档树思维导图初始化完成，开始监听节点变化');
+            this.debugLog('文档树思维导图初始化完成，开始监听节点变化');
         }, 1000);
         
     }
@@ -1364,7 +1428,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                             hpath: parentInfo.hpath || parent.data.hpath
                         }
                     };
-                    console.log(`增强父节点 ${parent.data.uid} 的信息:`, {
+                    this.debugLog(`增强父节点 ${parent.data.uid} 的信息:`, {
                         原始: parent.data,
                         增强后: enhancedParent.data
                     });
@@ -1393,7 +1457,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
      */
     async handleNodesRename(renamedNodes: Array<{uid: string, oldNodeInfo: any, newNodeInfo: any}>) {
         try {
-            console.log('=== 开始处理节点重命名 ===');
+            this.debugLog('=== 开始处理节点重命名 ===');
             
             // 过滤出需要重命名文档的节点（排除工作空间、笔记本等）
             const docsToRename = renamedNodes.filter(({newNodeInfo}) => {
@@ -1405,11 +1469,11 @@ export default class SiYuanDocTreePlugin extends Plugin {
             });
             
             if (docsToRename.length === 0) {
-                console.log('没有需要重命名的文档');
+                this.debugLog('没有需要重命名的文档');
                 return;
             }
             
-            console.log('需要重命名的文档节点:', docsToRename);
+            this.debugLog('需要重命名的文档节点:', docsToRename);
             
             // 执行重命名操作
             let successCount = 0;
@@ -1423,11 +1487,11 @@ export default class SiYuanDocTreePlugin extends Plugin {
                     
                     // 如果去除 HTML 后文本没有变化，跳过重命名
                     if (cleanNewText === cleanOldText) {
-                        console.log(`跳过重命名（纯文本相同）: "${cleanNewText}"`);
+                        this.debugLog(`跳过重命名（纯文本相同）: "${cleanNewText}"`);
                         continue;
                     }
                     
-                    console.log(`重命名文档: "${cleanOldText}" -> "${cleanNewText}" (${newNodeInfo.id})`);
+                    this.debugLog(`重命名文档: "${cleanOldText}" -> "${cleanNewText}" (${newNodeInfo.id})`);
                     
                     // 调用重命名文档API，使用纯文本
                     if (newNodeInfo.notebookId && newNodeInfo.path && cleanNewText) {
@@ -1436,17 +1500,17 @@ export default class SiYuanDocTreePlugin extends Plugin {
                             newNodeInfo.path, 
                             cleanNewText  // 使用去除 HTML 后的纯文本
                         );
-                        console.log(`文档重命名成功: "${cleanOldText}" -> "${cleanNewText}"`);
+                        this.debugLog(`文档重命名成功: "${cleanOldText}" -> "${cleanNewText}"`);
                         successCount++;
                     } else {
-                        console.warn(`文档信息不完整，跳过重命名: ${newNodeInfo.text}`, {
+                        this.debugWarn(`文档信息不完整，跳过重命名: ${newNodeInfo.text}`, {
                             notebookId: newNodeInfo.notebookId,
                             path: newNodeInfo.path
                         });
                         failureCount++;
                     }
                 } catch (error) {
-                    console.error(`重命名文档失败: "${oldNodeInfo.text}" -> "${newNodeInfo.text}"`, error);
+                    this.debugError(`重命名文档失败: "${oldNodeInfo.text}" -> "${newNodeInfo.text}"`, error);
                     failureCount++;
                 }
             }
@@ -1459,10 +1523,10 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 showMessage(`${failureCount} 个文档重命名失败`, 3000, 'error');
             }
             
-            console.log('=== 节点重命名处理完成 ===');
+            this.debugLog('=== 节点重命名处理完成 ===');
             
         } catch (error) {
-            console.error('处理节点重命名失败:', error);
+            this.debugError('处理节点重命名失败:', error);
             showMessage(`重命名文档失败: ${error.message}`, 3000, 'error');
         }
     }
@@ -1473,7 +1537,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
      */
     async handleNodesDelete(deletedNodes: Array<{uid: string, nodeInfo: any}>) {
         try {
-            console.log('=== 开始处理节点删除 ===');
+            this.debugLog('=== 开始处理节点删除 ===');
             
             // 过滤出需要删除文档的节点（排除工作空间、笔记本等）
             const docsToDelete = deletedNodes.filter(({nodeInfo}) => {
@@ -1481,11 +1545,11 @@ export default class SiYuanDocTreePlugin extends Plugin {
             });
             
             if (docsToDelete.length === 0) {
-                console.log('没有需要删除的文档');
+                this.debugLog('没有需要删除的文档');
                 return;
             }
             
-            console.log('需要删除的文档节点:', docsToDelete);
+            this.debugLog('需要删除的文档节点:', docsToDelete);
             
             // 构建删除确认消息
             const docNames = docsToDelete.map(({nodeInfo}) => nodeInfo.text).join('、');
@@ -1497,7 +1561,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             const confirmed = await this.showDeleteConfirmDialog(confirmMessage);
             
             if (!confirmed) {
-                console.log('用户取消删除操作');
+                this.debugLog('用户取消删除操作');
                 showMessage('已取消删除操作', 2000, 'info');
                 return;
             }
@@ -1508,20 +1572,20 @@ export default class SiYuanDocTreePlugin extends Plugin {
             
             for (const {nodeInfo} of docsToDelete) {
                 try {
-                    console.log(`删除文档: ${nodeInfo.text} (${nodeInfo.id})`);
+                    this.debugLog(`删除文档: ${nodeInfo.text} (${nodeInfo.id})`);
                     
                     // 调用删除文档API
                     // 注意：removeDoc 需要 notebook 和 path 参数
                     if (nodeInfo.notebookId && nodeInfo.path) {
                         await api.removeDoc(nodeInfo.notebookId, nodeInfo.path);
-                        console.log(`文档删除成功: ${nodeInfo.text}`);
+                        this.debugLog(`文档删除成功: ${nodeInfo.text}`);
                         successCount++;
                     } else {
-                        console.warn(`文档信息不完整，跳过删除: ${nodeInfo.text}`, nodeInfo);
+                        this.debugWarn(`文档信息不完整，跳过删除: ${nodeInfo.text}`, nodeInfo);
                         failureCount++;
                     }
                 } catch (error) {
-                    console.error(`删除文档失败: ${nodeInfo.text}`, error);
+                    this.debugError(`删除文档失败: ${nodeInfo.text}`, error);
                     failureCount++;
                 }
             }
@@ -1534,10 +1598,10 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 showMessage(`${failureCount} 个文档删除失败`, 3000, 'error');
             }
             
-            console.log('=== 节点删除处理完成 ===');
+            this.debugLog('=== 节点删除处理完成 ===');
             
         } catch (error) {
-            console.error('处理节点删除失败:', error);
+            this.debugError('处理节点删除失败:', error);
             showMessage(`删除文档失败: ${error.message}`, 3000, 'error');
         }
     }
@@ -1604,8 +1668,8 @@ export default class SiYuanDocTreePlugin extends Plugin {
      */
     async handleNodeCreate(nodeData: any) {
         try {
-            console.log('=== 开始处理新节点创建 ===');
-            console.log('节点完整数据:', JSON.stringify(nodeData, null, 2));
+            this.debugLog('=== 开始处理新节点创建 ===');
+            this.debugLog('节点完整数据:', JSON.stringify(nodeData, null, 2));
             
             // 获取节点的基本信息，并去除 HTML 标签
             const rawNodeName = nodeData.data?.text;
@@ -1613,37 +1677,37 @@ export default class SiYuanDocTreePlugin extends Plugin {
             const nodeUid = nodeData.data?.uid;
             const parentNodeData = nodeData.parent?.data;
             
-            console.log('节点原始名称:', rawNodeName);
-            console.log('节点纯文本名称:', nodeName);
-            console.log('节点UID:', nodeUid);
-            console.log('父节点数据:', parentNodeData);
+            this.debugLog('节点原始名称:', rawNodeName);
+            this.debugLog('节点纯文本名称:', nodeName);
+            this.debugLog('节点UID:', nodeUid);
+            this.debugLog('父节点数据:', parentNodeData);
             
             if (!nodeName || nodeName.trim() === '') {
-                console.log('节点名称为空，跳过创建文档');
+                this.debugLog('节点名称为空，跳过创建文档');
                 return;
             }
             
             if (!parentNodeData) {
-                console.log('父节点不存在，跳过创建文档');
+                this.debugLog('父节点不存在，跳过创建文档');
                 return;
             }
             
             // 跳过工作空间根节点
             if (parentNodeData.isWorkspace || parentNodeData.isRoot) {
-                console.log('父节点是工作空间或根节点，跳过创建文档');
+                this.debugLog('父节点是工作空间或根节点，跳过创建文档');
                 return;
             }
             
             // 如果节点已经有ID，说明不是新创建的，可能是从现有文档加载的
             if (nodeData.data?.id) {
-                console.log('节点已有文档ID，跳过创建:', nodeData.data.id);
+                this.debugLog('节点已有文档ID，跳过创建:', nodeData.data.id);
                 return;
             }
             
             // 获取笔记本ID
             let notebookId = parentNodeData.notebookId;
             if (!notebookId) {
-                console.log('无法确定笔记本ID，跳过创建文档');
+                this.debugLog('无法确定笔记本ID，跳过创建文档');
                 return;
             }
             
@@ -1653,36 +1717,36 @@ export default class SiYuanDocTreePlugin extends Plugin {
             if (parentNodeData.isNotebook) {
                 // 如果父节点是笔记本，创建在笔记本根目录
                 newDocPath = `/${nodeName}`;
-                console.log('在笔记本根目录创建文档，路径:', newDocPath);
+                this.debugLog('在笔记本根目录创建文档，路径:', newDocPath);
             } else if (parentNodeData.id) {
                 // 如果父节点是文档，需要获取其层级路径
                 try {
-                    console.log('获取父文档的层级路径...');
+                    this.debugLog('获取父文档的层级路径...');
                     const parentHPath = await api.getHPathByID(parentNodeData.id);
-                    console.log('父文档层级路径:', parentHPath);
+                    this.debugLog('父文档层级路径:', parentHPath);
                     
                     // 使用层级路径构建新文档路径
                     newDocPath = `${parentHPath}/${nodeName}`;
-                    console.log('使用父文档层级路径构建:', newDocPath);
+                    this.debugLog('使用父文档层级路径构建:', newDocPath);
                 } catch (error) {
-                    console.warn('获取父文档层级路径失败，使用备用方案:', error);
+                    this.debugWarn('获取父文档层级路径失败，使用备用方案:', error);
                     // 备用方案：直接使用父文档ID
                     newDocPath = `/${parentNodeData.id}/${nodeName}`;
-                    console.log('备用路径（使用ID）:', newDocPath);
+                    this.debugLog('备用路径（使用ID）:', newDocPath);
                 }
                 
-                console.log('父文档信息:', {
+                this.debugLog('父文档信息:', {
                     id: parentNodeData.id,
                     text: parentNodeData.text,
                     hpath: parentNodeData.hpath,
                     path: parentNodeData.path
                 });
             } else {
-                console.log('父节点信息不完整，跳过创建文档');
+                this.debugLog('父节点信息不完整，跳过创建文档');
                 return;
             }
             
-            console.log('准备创建文档:', {
+            this.debugLog('准备创建文档:', {
                 notebookId,
                 path: newDocPath,
                 nodeName
@@ -1695,7 +1759,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 `# ${nodeName}\n\n`
             );
             
-            console.log('文档创建成功，返回结果:', result);
+            this.debugLog('文档创建成功，返回结果:', result);
             showMessage(`已创建文档: ${nodeName}`, 2000, 'info');
             
             // 更新节点数据，添加新创建文档的ID
@@ -1718,7 +1782,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 
                 nodeData.data.path = actualDocPath;
                 
-                console.log('已更新节点数据，文档ID:', newDocId, '路径:', actualDocPath);
+                this.debugLog('已更新节点数据，文档ID:', newDocId, '路径:', actualDocPath);
                 
                 // 立即更新 lastNodeMap，确保后续操作能获取到完整信息
                 if (this.lastNodeMap.has(nodeUid)) {
@@ -1727,7 +1791,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                     nodeInfo.notebookId = notebookId;
                     nodeInfo.path = actualDocPath;
                     this.lastNodeMap.set(nodeUid, nodeInfo);
-                    console.log('已更新 lastNodeMap 中的节点信息:', nodeInfo);
+                    this.debugLog('已更新 lastNodeMap 中的节点信息:', nodeInfo);
                 } else {
                     // 如果节点不存在于 lastNodeMap 中，直接添加
                     const newNodeInfo = {
@@ -1741,14 +1805,14 @@ export default class SiYuanDocTreePlugin extends Plugin {
                         hpath: undefined
                     };
                     this.lastNodeMap.set(nodeUid, newNodeInfo);
-                    console.log('新增 lastNodeMap 中的节点信息:', newNodeInfo);
+                    this.debugLog('新增 lastNodeMap 中的节点信息:', newNodeInfo);
                 }
             }
             
-            console.log('=== 节点创建处理完成 ===');
+            this.debugLog('=== 节点创建处理完成 ===');
             
         } catch (error) {
-            console.error('创建文档失败:', error);
+            this.debugError('创建文档失败:', error);
             showMessage(`创建文档失败: ${error.message}`, 3000, 'error');
         }
     }
@@ -1857,7 +1921,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                     if (this.mindMap.associativeLine && typeof this.mindMap.associativeLine.clearAllLines === 'function') {
                         this.mindMap.associativeLine.clearAllLines();
                         showMessage('已隐藏关联线', 1500, 'info');
-                        console.log('已清除所有关联线');
+                        this.debugLog('已清除所有关联线');
                     }
                 }
             });
@@ -1905,11 +1969,11 @@ export default class SiYuanDocTreePlugin extends Plugin {
      */
     private expandToLevel(mindMap: any, level: number) {
         if (!mindMap || !mindMap.renderer || !mindMap.renderer.root) {
-            console.warn('思维导图实例或根节点不存在');
+            this.debugWarn('思维导图实例或根节点不存在');
             return;
         }
         
-        console.log('开始应用展开层级:', level);
+        this.debugLog('开始应用展开层级:', level);
         
         // 第一步：先折叠所有节点（确保初始状态一致）
         const collapseAll = (node: any) => {
@@ -1963,7 +2027,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             });
         }
         
-        console.log('展开层级应用完成，重新渲染');
+        this.debugLog('展开层级应用完成，重新渲染');
         
         // 重新渲染
         mindMap.render();
@@ -2088,11 +2152,11 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 
                 // 获取展开层级配置
                 const expandLevel = this.settingUtils.get(docMindMapExpandLevelName) ?? 3;
-                console.log('文档思维导图展开层级:', expandLevel);
+                this.debugLog('文档思维导图展开层级:', expandLevel);
                 
                 // 获取主题配置
                 const themeName = this.settingUtils.get(docMindMapThemeName) || 'default';
-                console.log('文档思维导图主题:', themeName);
+                this.debugLog('文档思维导图主题:', themeName);
                 
                 // 创建思维导图实例
                 this.docMindMap = new MindMap({
@@ -2151,7 +2215,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             }, 100);
 
         } catch (error) {
-            console.error("打开文档思维导图失败:", error);
+            this.debugError("打开文档思维导图失败:", error);
             showMessage(`打开文档思维导图失败: ${error.message}`, 5000, "error");
         }
     }
@@ -2360,23 +2424,23 @@ export default class SiYuanDocTreePlugin extends Plugin {
             
             // 4. 添加新的 Markdown 内容到文档
             // 需要移除第一行的 H1 标题（因为文档本身就是标题）
-            console.log('=== 调试保存过程 ===');
-            console.log('原始 Markdown:');
-            console.log(markdown);
-            console.log('前 20 行:');
-            console.log(markdown.split('\n').slice(0, 20).map((line, i) => `${i}: [${line}]`).join('\n'));
+            this.debugLog('=== 调试保存过程 ===');
+            this.debugLog('原始 Markdown:');
+            this.debugLog(markdown);
+            this.debugLog('前 20 行:');
+            this.debugLog(markdown.split('\n').slice(0, 20).map((line, i) => `${i}: [${line}]`).join('\n'));
             
             const lines = markdown.split('\n');
             let contentLines = lines;
             
             // 如果第一行是 H1 标题，则移除它
             if (lines.length > 0 && lines[0].startsWith('# ')) {
-                console.log('移除第一行 H1:', lines[0]);
+                this.debugLog('移除第一行 H1:', lines[0]);
                 contentLines = lines.slice(1);
             }
             
-            console.log('移除 H1 后的前 10 行:');
-            console.log(contentLines.slice(0, 10).map((line, i) => `${i}: [${line}]`).join('\n'));
+            this.debugLog('移除 H1 后的前 10 行:');
+            this.debugLog(contentLines.slice(0, 10).map((line, i) => `${i}: [${line}]`).join('\n'));
             
             // 移除开头的所有空行
             let removedCount = 0;
@@ -2384,14 +2448,14 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 contentLines.shift();
                 removedCount++;
             }
-            console.log('移除了', removedCount, '个开头空行');
+            this.debugLog('移除了', removedCount, '个开头空行');
             
             // 如果第一行是标题且第二行是空行，移除第二行
             // 这样可以避免文档开头出现空行
             if (contentLines.length > 1 && 
                 contentLines[0].match(/^#{1,6}\s+/) && 
                 contentLines[1].trim() === '') {
-                console.log('移除第一个标题后的空行');
+                this.debugLog('移除第一个标题后的空行');
                 contentLines.splice(1, 1);
             }
             
@@ -2401,7 +2465,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 contentLines.pop();
                 removedEndCount++;
             }
-            console.log('移除了', removedEndCount, '个结尾空行');
+            this.debugLog('移除了', removedEndCount, '个结尾空行');
             
             let contentMarkdown = contentLines.join('\n');
             
@@ -2411,14 +2475,14 @@ export default class SiYuanDocTreePlugin extends Plugin {
             // 确保 Markdown 不以换行符结尾（彻底清理）
             contentMarkdown = contentMarkdown.replace(/\n+$/, '');
             
-            console.log('最终保存的 Markdown 前 10 行:');
-            console.log(contentMarkdown.split('\n').slice(0, 10).map((line, i) => `${i}: [${line}]`).join('\n'));
-            console.log('最终 Markdown 后 10 行:');
-            console.log(contentMarkdown.split('\n').slice(-10).map((line, i) => `${i}: [${line}]`).join('\n'));
-            console.log('最终 Markdown 长度:', contentMarkdown.length);
-            console.log('最终 Markdown 的前 50 个字符（带转义）:', JSON.stringify(contentMarkdown.substring(0, 50)));
-            console.log('最终 Markdown 的后 50 个字符（带转义）:', JSON.stringify(contentMarkdown.substring(contentMarkdown.length - 50)));
-            console.log('=== 调试结束 ===');
+            this.debugLog('最终保存的 Markdown 前 10 行:');
+            this.debugLog(contentMarkdown.split('\n').slice(0, 10).map((line, i) => `${i}: [${line}]`).join('\n'));
+            this.debugLog('最终 Markdown 后 10 行:');
+            this.debugLog(contentMarkdown.split('\n').slice(-10).map((line, i) => `${i}: [${line}]`).join('\n'));
+            this.debugLog('最终 Markdown 长度:', contentMarkdown.length);
+            this.debugLog('最终 Markdown 的前 50 个字符（带转义）:', JSON.stringify(contentMarkdown.substring(0, 50)));
+            this.debugLog('最终 Markdown 的后 50 个字符（带转义）:', JSON.stringify(contentMarkdown.substring(contentMarkdown.length - 50)));
+            this.debugLog('=== 调试结束 ===');
             
             // 如果有内容，则添加到文档
             // 由于已经删除了所有子块，直接使用 prependBlock
@@ -2429,7 +2493,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             showMessage('保存成功！', 2000, 'info');
             
         } catch (error) {
-            console.error('保存失败:', error);
+            this.debugError('保存失败:', error);
             showMessage(`保存失败: ${error.message}`, 3000, 'error');
         }
     }
@@ -2573,25 +2637,25 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 const imagePath = imagePaths[i];
                 
                 try {
-                    console.log(`\n=== 处理图片 ${i + 1}/${imagePaths.length} ===`);
-                    console.log('原始路径:', imagePath);
+                    this.debugLog(`\n=== 处理图片 ${i + 1}/${imagePaths.length} ===`);
+                    this.debugLog('原始路径:', imagePath);
                     
                     // 获取文件名
                     const imageFileName = imagePath.split('/').pop() || `image_${i}.png`;
-                    console.log('文件名:', imageFileName);
+                    this.debugLog('文件名:', imageFileName);
                     
                     let blob: Blob;
                     
                     // 判断是否是外部 URL
                     if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
                         // 外部 URL，直接 fetch
-                        console.log('-> 外部 URL，直接 fetch');
+                        this.debugLog('-> 外部 URL，直接 fetch');
                         const response = await fetch(imagePath);
                         if (!response.ok) {
                             throw new Error(`HTTP error! status: ${response.status}`);
                         }
                         blob = await response.blob();
-                        console.log('✓ fetch 成功:', blob.size, 'bytes, type:', blob.type);
+                        this.debugLog('✓ fetch 成功:', blob.size, 'bytes, type:', blob.type);
                     } else {
                         // 思源内部资源，使用 API 获取
                         // 思源资源路径 /assets/xxx 在文件系统中是 data/assets/xxx
@@ -2604,8 +2668,8 @@ export default class SiYuanDocTreePlugin extends Plugin {
                             apiPath = apiPath.substring(1);
                         }
                         
-                        console.log('-> 思源内部资源');
-                        console.log('   API 路径:', apiPath);
+                        this.debugLog('-> 思源内部资源');
+                        this.debugLog('   API 路径:', apiPath);
                         
                         // 使用思源 API 获取文件
                         const result = await api.getFileBlob(apiPath);
@@ -2613,26 +2677,26 @@ export default class SiYuanDocTreePlugin extends Plugin {
                             throw new Error('API 返回 null');
                         }
                         blob = result;
-                        console.log('✓ API 获取成功:', blob.size, 'bytes, type:', blob.type);
+                        this.debugLog('✓ API 获取成功:', blob.size, 'bytes, type:', blob.type);
                         
                         // 验证 blob 是否有效
                         if (blob.size < 100) {
-                            console.warn('⚠️ 警告：图片文件太小，可能不是有效的图片');
+                            this.debugWarn('⚠️ 警告：图片文件太小，可能不是有效的图片');
                         }
                         
                         // 检查 MIME 类型
                         if (!blob.type.startsWith('image/')) {
-                            console.warn('⚠️ 警告：MIME 类型不是图片:', blob.type);
+                            this.debugWarn('⚠️ 警告：MIME 类型不是图片:', blob.type);
                             // 尝试读取一部分内容看看是不是 JSON 错误
                             const text = await blob.slice(0, 200).text();
-                            console.log('   前 200 字节内容:', text);
+                            this.debugLog('   前 200 字节内容:', text);
                         }
                     }
                     
                     // 添加到 ZIP
                     imagesFolder.file(imageFileName, blob);
                     successCount++;
-                    console.log('✓ 已添加到 ZIP');
+                    this.debugLog('✓ 已添加到 ZIP');
                     
                     // 记录路径映射：原始路径 -> 新路径
                     pathMapping.set(imagePath, `./images/${imageFileName}`);
@@ -2642,8 +2706,8 @@ export default class SiYuanDocTreePlugin extends Plugin {
                         showMessage(`已处理 ${i + 1}/${imagePaths.length} 张图片...`, 1000, 'info');
                     }
                 } catch (error) {
-                    console.error('✗ 处理图片失败:', imagePath);
-                    console.error('   错误:', error);
+                    this.debugError('✗ 处理图片失败:', imagePath);
+                    this.debugError('   错误:', error);
                     failedCount++;
                 }
             }
@@ -2672,7 +2736,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 showMessage(`导出成功：已打包 ${successCount} 张图片`, 3000, 'info');
             }
         } catch (error) {
-            console.error('打包失败:', error);
+            this.debugError('打包失败:', error);
             showMessage(`打包失败: ${error.message}`, 3000, 'error');
         }
     }
@@ -2983,7 +3047,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             }
 
         } catch (error) {
-            console.error('显示文档选择对话框失败:', error);
+            this.debugError('显示文档选择对话框失败:', error);
             showMessage(`显示对话框失败: ${error.message}`, 3000, 'error');
         }
     }
@@ -3003,7 +3067,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             }
 
             const currentDocId = protyle.block.rootID;
-            console.log('当前文档ID:', currentDocId);
+            this.debugLog('当前文档ID:', currentDocId);
 
             // 获取光标所在的块ID
             let cursorBlockId: string | null = null;
@@ -3020,7 +3084,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                         const nodeId = node.getAttribute('data-node-id');
                         if (nodeId) {
                             cursorBlockId = nodeId;
-                            console.log('从选区找到光标块ID:', cursorBlockId);
+                            this.debugLog('从选区找到光标块ID:', cursorBlockId);
                             break;
                         }
                     }
@@ -3037,7 +3101,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                         const nodeId = node.getAttribute('data-node-id');
                         if (nodeId) {
                             cursorBlockId = nodeId;
-                            console.log('从 protyle 找到光标块ID:', cursorBlockId);
+                            this.debugLog('从 protyle 找到光标块ID:', cursorBlockId);
                             break;
                         }
                     }
@@ -3053,19 +3117,19 @@ export default class SiYuanDocTreePlugin extends Plugin {
             // 如果找到光标所在块，则在该块之后插入；否则追加到文档末尾
             let result;
             if (cursorBlockId) {
-                console.log('在光标块后插入，块ID:', cursorBlockId);
+                this.debugLog('在光标块后插入，块ID:', cursorBlockId);
                 result = await api.insertBlock('markdown', markdownContent, undefined, cursorBlockId, currentDocId);
             } else {
-                console.log('未找到光标块，追加到文档末尾');
+                this.debugLog('未找到光标块，追加到文档末尾');
                 result = await api.appendBlock('markdown', markdownContent, currentDocId);
             }
             
-            console.log('插入块结果:', result);
+            this.debugLog('插入块结果:', result);
             
             // 获取思源自动生成的块 ID
             if (result && result[0] && result[0].doOperations && result[0].doOperations[0]) {
                 const blockId = result[0].doOperations[0].id;
-                console.log('获取到块 ID:', blockId);
+                this.debugLog('获取到块 ID:', blockId);
                 
                 // 延迟初始化，多次尝试直到找到元素
                 let attempts = 0;
@@ -3075,57 +3139,78 @@ export default class SiYuanDocTreePlugin extends Plugin {
                     const blockElement = document.querySelector(`[data-node-id="${blockId}"]`);
                     
                     if (blockElement) {
-                        console.log('找到块元素，开始初始化 (尝试次数:', attempts, ')');
+                        this.debugLog('找到块元素，开始初始化 (尝试次数:', attempts, ')');
                         this.initEmbeddedMindMap(blockId, docId, docTitle);
                     } else if (attempts < maxAttempts) {
-                        console.log('第', attempts, '次未找到块元素，500ms 后重试...');
+                        this.debugLog('第', attempts, '次未找到块元素，500ms 后重试...');
                         setTimeout(tryInit, 500);
                     } else {
-                        console.error('尝试', maxAttempts, '次后仍未找到块元素:', blockId);
-                        console.log('当前所有 HTML 块:', document.querySelectorAll('[data-type="NodeHTMLBlock"]'));
+                        this.debugError('尝试', maxAttempts, '次后仍未找到块元素:', blockId);
+                        this.debugLog('当前所有 HTML 块:', document.querySelectorAll('[data-type="NodeHTMLBlock"]'));
                     }
                 };
                 
                 // 延迟 500ms 后开始第一次尝试
                 setTimeout(tryInit, 500);
             } else {
-                console.error('无法从结果中获取块 ID:', result);
+                this.debugError('无法从结果中获取块 ID:', result);
             }
 
             showMessage('思维导图块已插入', 2000, 'info');
 
         } catch (error) {
-            console.error('插入思维导图块失败:', error);
+            this.debugError('插入思维导图块失败:', error);
             showMessage(`插入失败: ${error.message}`, 3000, 'error');
         }
     }
 
     /**
      * 初始化单个嵌入的思维导图
+     * @param blockId 块ID
+     * @param docId 文档ID
+     * @param docTitle 文档标题
+     * @param forceReload 是否强制重新加载（用于文档刷新后重新加载）
      */
-    async initEmbeddedMindMap(blockId: string, docId: string, docTitle: string) {
+    async initEmbeddedMindMap(blockId: string, docId: string, docTitle: string, forceReload: boolean = false) {
         try {
-            // 防止重复初始化
-            if (this.embeddedMindMaps.has(blockId)) {
-                console.log('思维导图已初始化，跳过:', blockId);
-                return;
+            // 如果强制重新加载，先清理旧实例
+            if (forceReload) {
+                if (this.embeddedMindMaps.has(blockId)) {
+                    const oldMindMap = this.embeddedMindMaps.get(blockId);
+                    if (oldMindMap && typeof oldMindMap.destroy === 'function') {
+                        oldMindMap.destroy();
+                    }
+                    this.embeddedMindMaps.delete(blockId);
+                    this.debugLog('强制重新加载，已清理旧实例:', blockId);
+                }
+            } else {
+                // 防止重复初始化
+                if (this.embeddedMindMaps.has(blockId)) {
+                    this.debugLog('思维导图已初始化，跳过:', blockId);
+                    return;
+                }
             }
             
-            console.log('initEmbeddedMindMap 被调用:', { blockId, docId, docTitle });
+            this.debugLog('initEmbeddedMindMap 被调用:', { blockId, docId, docTitle, forceReload });
             
             // 使用 data-node-id 属性查找块元素
             const blockElement = document.querySelector(`[data-node-id="${blockId}"]`) as HTMLElement;
             
             if (!blockElement) {
-                console.error('找不到块元素，blockId:', blockId);
+                this.debugError('找不到块元素，blockId:', blockId);
                 return;
             }
 
-            // 检查是否已经有 mindmap-embed-wrapper（避免重复创建）
+            // 检查是否已经有 mindmap-embed-wrapper
             let wrapperDiv = blockElement.querySelector('.mindmap-embed-wrapper') as HTMLElement;
             
-            if (wrapperDiv) {
-                console.log('思维导图已渲染，跳过');
+            // 如果是强制重新加载且已有wrapper，先移除它
+            if (forceReload && wrapperDiv) {
+                wrapperDiv.remove();
+                wrapperDiv = null;
+                this.debugLog('强制重新加载，已移除旧的wrapper');
+            } else if (wrapperDiv && !forceReload) {
+                this.debugLog('思维导图已渲染，跳过');
                 return;
             }
 
@@ -3166,6 +3251,23 @@ export default class SiYuanDocTreePlugin extends Plugin {
                     <span style="font-size: 14px; font-weight: 500; color: var(--b3-theme-on-background);">${docTitle}</span>
                 `;
                 
+                // 按钮容器
+                const buttonsDiv = document.createElement('div');
+                buttonsDiv.style.cssText = 'display: flex; gap: 8px;';
+                
+                // 重新加载按钮
+                const reloadBtn = document.createElement('button');
+                reloadBtn.className = 'b3-button b3-button--outline';
+                reloadBtn.style.cssText = 'padding: 4px 12px; font-size: 12px;';
+                reloadBtn.innerHTML = `
+                    <svg style="width: 12px; height: 12px;"><use xlink:href="#iconRefresh"></use></svg>
+                    <span style="margin-left: 4px;">重新加载</span>
+                `;
+                reloadBtn.onclick = () => {
+                    this.initEmbeddedMindMap(blockId, docId, docTitle, true);
+                };
+                
+                // 展开按钮
                 const expandBtn = document.createElement('button');
                 expandBtn.className = 'b3-button b3-button--outline expand-mindmap-btn';
                 expandBtn.style.cssText = 'padding: 4px 12px; font-size: 12px;';
@@ -3175,8 +3277,11 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 `;
                 expandBtn.onclick = () => this.openDocMindMapDialogForDoc(docId, docTitle);
                 
+                buttonsDiv.appendChild(reloadBtn);
+                buttonsDiv.appendChild(expandBtn);
+                
                 headerDiv.appendChild(titleDiv);
-                headerDiv.appendChild(expandBtn);
+                headerDiv.appendChild(buttonsDiv);
                 
                 // 创建思维导图容器
                 const mindmapContainer = document.createElement('div');
@@ -3272,17 +3377,17 @@ export default class SiYuanDocTreePlugin extends Plugin {
             const container = wrapperDiv.querySelector('.mindmap-container') as HTMLElement;
             
             if (!container) {
-                console.error('找不到思维导图容器');
+                this.debugError('找不到思维导图容器');
                 return;
             }
 
             // 等待一小段时间让 DOM 完全渲染
             await new Promise(resolve => setTimeout(resolve, 100));
 
-            console.log('开始获取思维导图数据...');
+            this.debugLog('开始获取思维导图数据...');
             // 获取思维导图数据
             const mindMapData = await parseDocumentBlocksToMindMap(docId, docTitle);
-            console.log('思维导图数据获取成功');
+            this.debugLog('思维导图数据获取成功');
 
             // 移除加载提示
             const loadingElement = container.querySelector('.mindmap-loading');
@@ -3292,11 +3397,11 @@ export default class SiYuanDocTreePlugin extends Plugin {
 
             container.innerHTML = '';
 
-            console.log('创建思维导图实例...');
+            this.debugLog('创建思维导图实例...');
             
             // 获取展开层级配置（行内思维导图使用文档思维导图的配置）
             const expandLevel = this.settingUtils.get(docMindMapExpandLevelName) ?? 3;
-            console.log('行内思维导图展开层级:', expandLevel);
+            this.debugLog('行内思维导图展开层级:', expandLevel);
             
             // 创建思维导图实例（只读模式）
             const mindMap = new MindMap({
@@ -3325,13 +3430,13 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 }
             }, 200);
 
-            console.log('思维导图实例创建成功');
+            this.debugLog('思维导图实例创建成功');
             this.embeddedMindMaps.set(blockId, mindMap);
 
-            console.log('嵌入的思维导图初始化完成');
+            this.debugLog('嵌入的思维导图初始化完成');
 
         } catch (error) {
-            console.error('初始化嵌入思维导图失败:', error, blockId);
+            this.debugError('初始化嵌入思维导图失败:', error, blockId);
             
             // 在容器中显示错误信息
             const blockElement = document.querySelector(`[data-node-id="${blockId}"]`);
@@ -3357,7 +3462,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
     initAllEmbeddedMindMaps() {
         // 查找所有带有自定义属性的块
         const blocks = document.querySelectorAll('[custom-mindmap-id]');
-        console.log('找到', blocks.length, '个嵌入思维导图块');
+        this.debugLog('找到', blocks.length, '个嵌入思维导图块');
         
         blocks.forEach((blockElement) => {
             const blockId = blockElement.getAttribute('data-node-id');
@@ -3375,7 +3480,73 @@ export default class SiYuanDocTreePlugin extends Plugin {
             
             if (docId && encodedTitle) {
                 const docTitle = decodeURIComponent(encodedTitle);
-                console.log('发现嵌入思维导图块:', { blockId, docId, docTitle });
+                this.debugLog('发现嵌入思维导图块:', { blockId, docId, docTitle });
+                this.initEmbeddedMindMap(blockId, docId, docTitle);
+            }
+        });
+    }
+
+    /**
+     * 重新检测并加载所有嵌入的思维导图（强制重新加载）
+     * 用于文档刷新后或用户手动触发
+     */
+    reloadAllEmbeddedMindMaps() {
+        this.debugLog('开始重新检测并加载所有嵌入的思维导图...');
+        
+        // 查找所有带有自定义属性的块
+        const blocks = document.querySelectorAll('[custom-mindmap-id]');
+        this.debugLog('找到', blocks.length, '个嵌入思维导图块');
+        
+        let loadedCount = 0;
+        blocks.forEach((blockElement) => {
+            const blockId = blockElement.getAttribute('data-node-id');
+            const docId = blockElement.getAttribute('custom-doc-id');
+            const encodedTitle = blockElement.getAttribute('custom-doc-title');
+            
+            if (blockId && docId && encodedTitle) {
+                const docTitle = decodeURIComponent(encodedTitle);
+                this.debugLog('重新加载嵌入思维导图块:', { blockId, docId, docTitle });
+                this.initEmbeddedMindMap(blockId, docId, docTitle, true); // forceReload = true
+                loadedCount++;
+            }
+        });
+        
+        if (loadedCount > 0) {
+            showMessage(`已重新加载 ${loadedCount} 个嵌入的思维导图`, 2000, 'info');
+        } else {
+            showMessage('未发现嵌入的思维导图块', 2000, 'info');
+        }
+    }
+
+    /**
+     * 检查并自动加载未初始化的思维导图块
+     * 用于文档刷新后自动检测
+     */
+    private checkAndReloadMindMaps() {
+        // 查找所有带有自定义属性的块
+        const blocks = document.querySelectorAll('[custom-mindmap-id]');
+        
+        blocks.forEach((blockElement) => {
+            const blockId = blockElement.getAttribute('data-node-id');
+            const docId = blockElement.getAttribute('custom-doc-id');
+            const encodedTitle = blockElement.getAttribute('custom-doc-title');
+            
+            if (!blockId || !docId || !encodedTitle) return;
+            
+            // 检查是否已经有wrapper（表示已初始化）
+            const hasWrapper = blockElement.querySelector('.mindmap-embed-wrapper');
+            
+            // 如果没有wrapper但存在于DOM中，说明文档刷新后需要重新加载
+            if (!hasWrapper) {
+                const docTitle = decodeURIComponent(encodedTitle);
+                this.debugLog('检测到未加载的思维导图块，自动加载:', { blockId, docId, docTitle });
+                
+                // 清理可能残留的旧实例引用
+                if (this.embeddedMindMaps.has(blockId)) {
+                    this.embeddedMindMaps.delete(blockId);
+                }
+                
+                // 初始化
                 this.initEmbeddedMindMap(blockId, docId, docTitle);
             }
         });
@@ -3401,7 +3572,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                     
                     if (blockId && docId && encodedTitle && !this.embeddedMindMaps.has(blockId)) {
                         const docTitle = decodeURIComponent(encodedTitle);
-                        console.log('检测到新的嵌入思维导图块:', { blockId, docId, docTitle });
+                        this.debugLog('检测到新的嵌入思维导图块:', { blockId, docId, docTitle });
                         setTimeout(() => {
                             this.initEmbeddedMindMap(blockId, docId, docTitle);
                         }, 1000);
@@ -3421,7 +3592,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                             
                             if (blockId && docId && encodedTitle && !this.embeddedMindMaps.has(blockId)) {
                                 const docTitle = decodeURIComponent(encodedTitle);
-                                console.log('检测到新的嵌入思维导图块:', { blockId, docId, docTitle });
+                                this.debugLog('检测到新的嵌入思维导图块:', { blockId, docId, docTitle });
                                 setTimeout(() => {
                                     this.initEmbeddedMindMap(blockId, docId, docTitle);
                                 }, 1000);
@@ -3437,7 +3608,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                             
                             if (blockId && docId && encodedTitle && !this.embeddedMindMaps.has(blockId)) {
                                 const docTitle = decodeURIComponent(encodedTitle);
-                                console.log('检测到新的嵌入思维导图块:', { blockId, docId, docTitle });
+                                this.debugLog('检测到新的嵌入思维导图块:', { blockId, docId, docTitle });
                                 setTimeout(() => {
                                     this.initEmbeddedMindMap(blockId, docId, docTitle);
                                 }, 1000);
@@ -3613,7 +3784,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             }, 100);
 
         } catch (error) {
-            console.error('打开思维导图失败:', error);
+            this.debugError('打开思维导图失败:', error);
             showMessage(`打开失败: ${error.message}`, 3000, 'error');
         }
     }
@@ -3836,7 +4007,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                     showMessage('不支持的导出格式', 3000, 'error');
             }
         } catch (error) {
-            console.error('导出失败:', error);
+            this.debugError('导出失败:', error);
             showMessage(`导出失败: ${error.message}`, 3000, 'error');
         }
     }
@@ -3896,7 +4067,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             
             showMessage('PNG 导出成功', 2000, 'info');
         } catch (error) {
-            console.error('PNG 导出失败:', error);
+            this.debugError('PNG 导出失败:', error);
             showMessage(`PNG 导出失败: ${error.message}`, 3000, 'error');
         }
     }
@@ -3921,7 +4092,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             
             showMessage('SVG 导出成功', 2000, 'info');
         } catch (error) {
-            console.error('SVG 导出失败:', error);
+            this.debugError('SVG 导出失败:', error);
             showMessage(`SVG 导出失败: ${error.message}`, 3000, 'error');
         }
     }
@@ -3952,7 +4123,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             
             showMessage('PDF 导出成功', 2000, 'info');
         } catch (error) {
-            console.error('PDF 导出失败:', error);
+            this.debugError('PDF 导出失败:', error);
             showMessage(`PDF 导出失败: ${error.message}`, 3000, 'error');
         }
     }
@@ -4007,7 +4178,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             
             showMessage('XMind 导出成功', 2000, 'info');
         } catch (error) {
-            console.error('XMind 导出失败:', error);
+            this.debugError('XMind 导出失败:', error);
             showMessage(`XMind 导出失败: ${error.message}`, 3000, 'error');
         }
     }
@@ -4175,7 +4346,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                     showMessage('不支持的导入格式', 3000, 'error');
             }
         } catch (error) {
-            console.error('导入失败:', error);
+            this.debugError('导入失败:', error);
             showMessage(`导入失败: ${error.message}`, 3000, 'error');
         }
     }

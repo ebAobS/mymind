@@ -229,6 +229,26 @@
     <div style="margin-top: 1.5em; padding: 1.5em; background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 1px solid #bae6fd; border-radius: 8px; box-shadow: 0 4px 12px rgba(14,165,233,0.15);">
         <h2 style="color: #0ea5e9; margin: 0 0 1em; text-align: center; font-size: 1.3em;">🚀 Changelog</h2>
         
+<strong style="color: #6366f1; font-size: 1.1em;">📅 v1.0.2 (2025-10-06)</strong>
+<ul style="margin: 0.5em 0; padding-left: 1.2em;">
+<li style="margin: 0.3em 0;"><strong style="color: #10b981;">✨ New Features</strong>
+<ul style="margin: 0.2em 0; padding-left: 1em;">
+<li><strong>Debug Log Toggle</strong>: Added "Enable Debug Log" option (disabled by default) for better performance and reduced memory usage</li>
+</ul>
+</li>
+<li style="margin: 0.3em 0;"><strong style="color: #ef4444;">🐛 Bug Fixes</strong>
+<ul style="margin: 0.2em 0; padding-left: 1em;">
+<li>Fixed memory leak: removed 200+ unconditional console log outputs</li>
+<li>Improved uninstall logic: auto-cleanup of config files</li>
+</ul>
+</li>
+<li style="margin: 0.3em 0;"><strong style="color: #8b5cf6;">🚀 Performance</strong>
+<ul style="margin: 0.2em 0; padding-left: 1em;">
+<li>Significantly reduced memory footprint for long-term use</li>
+</ul>
+</li>
+</ul>
+
 <strong style="color: #6366f1; font-size: 1.1em;">📅 v1.0.1 (2025-10-06)</strong>
 <ul style="margin: 0.5em 0; padding-left: 1.2em;">
 <li style="margin: 0.3em 0;"><strong style="color: #ef4444;">🐛 Bug Fixes</strong>

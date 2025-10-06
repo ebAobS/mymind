@@ -118,7 +118,7 @@ export class SettingUtils {
 
     async load() {
         let data = await this.plugin.loadData(this.file);
-        console.debug('Load config:', data);
+        // 日志已移除，通过插件设置控制
         if (data) {
             for (let [key, item] of this.settings) {
                 item.value = data?.[key] ?? item.value;
@@ -131,7 +131,7 @@ export class SettingUtils {
     async save(data?: any) {
         data = data ?? this.dump();
         await this.plugin.saveData(this.file, this.dump());
-        console.debug('Save config:', data);
+        // 日志已移除，通过插件设置控制
         return data;
     }
 

@@ -343,7 +343,7 @@ export async function getFile(path: string): Promise<any> {
  */
 export const getFileBlob = async (path: string): Promise<Blob | null> => {
     const endpoint = '/api/file/getFile'
-    console.log('[getFileBlob] 请求路径:', path);
+    // 日志已移除，通过插件设置控制
     let response = await fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -353,18 +353,15 @@ export const getFileBlob = async (path: string): Promise<Blob | null> => {
             path: path
         })
     });
-    console.log('[getFileBlob] 响应状态:', response.status, response.statusText);
-    console.log('[getFileBlob] Content-Type:', response.headers.get('Content-Type'));
     
     if (!response.ok) {
-        console.error('[getFileBlob] 请求失败');
+        console.error('[MyMind][getFileBlob] 请求失败:', response.status, response.statusText);
         // 尝试读取错误信息
         const text = await response.text();
-        console.error('[getFileBlob] 错误响应:', text);
+        console.error('[MyMind][getFileBlob] 错误响应:', text);
         return null;
     }
     let data = await response.blob();
-    console.log('[getFileBlob] 获取到 blob:', data.size, 'bytes, type:', data.type);
     return data;
 }
 
