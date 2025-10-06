@@ -82,11 +82,6 @@ export default defineConfig({
                     cleanupDistFiles({
                         patterns: ['i18n/*.yaml', 'i18n/*.md'],
                         distDir: outputDir
-                    }),
-                    zipPack({
-                        inDir: './dist',
-                        outDir: './',
-                        outFileName: 'package.zip'
                     })
                 ])
             ],
