@@ -1,0 +1,315 @@
+// 思维导图容器样式
+.mind-map-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  
+  #mindMapContainer {
+    width: 100%;
+    height: 100%;
+    background-color: var(--b3-theme-background);
+  }
+}
+
+// 暗色主题支持
+.markmap-dark {
+  .mind-map-container {
+    #mindMapContainer {
+      background-color: #1e1e1e;
+    }
+  }
+}
+
+// simple-mind-map 节点样式覆盖
+.smm-node {
+  cursor: grab;
+  user-select: none;
+  
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+// 拖拽时的样式
+.smm-node.dragging {
+  opacity: 0.4 !important;
+  cursor: grabbing !important;
+  pointer-events: none;
+}
+
+// 拖拽经过时的样式
+.smm-node.drag-over {
+  outline: 3px solid #3b82f6 !important;
+  outline-offset: 2px;
+  background-color: rgba(59, 130, 246, 0.15) !important;
+  box-shadow: 0 0 15px rgba(59, 130, 246, 0.5) !important;
+}
+
+// 文档思维导图容器
+.doc-mind-map-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  
+  #docMindMapContainer {
+    width: 100%;
+    height: 100%;
+    background-color: var(--b3-theme-background);
+  }
+  
+  // 工具栏样式
+  .doc-mind-map-toolbar {
+    button {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 13px;
+      padding: 6px 12px;
+      transition: all 0.2s ease;
+      
+      svg {
+        width: 14px;
+        height: 14px;
+      }
+      
+      &:hover {
+        background-color: var(--b3-theme-background-light);
+        transform: translateY(-1px);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      
+      &:active {
+        transform: translateY(0);
+      }
+    }
+  }
+}
+
+// 节点编辑状态样式
+.smm-node-text-editing {
+  outline: 2px solid var(--b3-theme-primary) !important;
+  outline-offset: 2px;
+  background-color: var(--b3-theme-background-light) !important;
+}
+
+// 节点激活状态样式
+.smm-node-active {
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.6) !important;
+}
+
+// 节点图片调整控制点样式
+.smm-img-adjust-control {
+  cursor: nwse-resize;
+  fill: var(--b3-theme-primary);
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+  
+  &:hover {
+    opacity: 1;
+  }
+}
+
+// 节点图片边框
+.smm-node-image {
+  border-radius: 4px;
+  transition: transform 0.2s ease;
+  
+  &:hover {
+    transform: scale(1.02);
+  }
+}
+
+// 纯图片节点（没有文字或只有空白符的节点）的样式优化
+.doc-mind-map-container {
+  // 减少图片节点的内边距
+  .smm-node[data-has-image="true"] {
+    .smm-node-text {
+      // 如果文本为空或只有空白，减少内边距
+      &:empty,
+      &:has(> :only-child:empty) {
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+    }
+    
+    // 纯图片节点，移除内边距
+    &:has(.smm-node-text:empty),
+    &:has(.smm-node-text > :only-child:empty) {
+      .smm-node-content {
+        padding: 0 !important;
+      }
+      
+      .smm-node-shape {
+        padding: 0 !important;
+      }
+    }
+  }
+  
+  // 针对思维导图节点的通用优化
+  .smm-node {
+    // 当节点只有图片没有文字时
+    &:has(img):not(:has(.smm-text-content)) {
+      .smm-node-content {
+        padding: 2px !important;
+      }
+    }
+  }
+}
+
+// 调整图片容器的样式
+.smm-node-image-container {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+// 针对所有思维导图节点的图片优化
+.doc-mind-map-container {
+  // 找到所有包含图片的节点
+  [data-node-image="true"],
+  .has-img {
+    // 减少节点的内边距
+    .smm-node-content-inner {
+      padding: 3px !important;
+    }
+    
+    // 图片元素本身
+    image,
+    img {
+      display: block;
+      margin: 0 auto;
+    }
+  }
+  
+  // SVG 外部容器（simple-mind-map 使用 SVG 渲染）
+  .smm-node foreignObject {
+    // 文本为空或极短时，减少内边距
+    &:has(p:empty),
+    &:has(span:empty) {
+      padding: 0 !important;
+      
+      & + foreignObject {
+        margin-top: 0 !important;
+      }
+    }
+  }
+  
+  // 针对纯图片节点（文本内容为 "​" 或空白）的特殊处理
+  .smm-node-text-content {
+    &:has(p:only-child) {
+      p {
+        &:empty,
+        &:has(span:only-child:empty) {
+          display: none; // 完全隐藏空文本
+        }
+      }
+    }
+  }
+}
+
+// 全局样式：减少图片周围的空白
+#docMindMapContainer {
+  // SVG 图片节点
+  image {
+    &[href] {
+      // 确保图片紧贴边缘
+      x: 0;
+      y: 0;
+    }
+  }
+  
+  // 节点矩形背景 - 自适应图片比例
+  .smm-node-shape rect {
+    // 确保背景紧贴内容，不强制正方形
+    &[data-has-image="true"] {
+      padding: 0;
+    }
+  }
+  
+  // 让节点内容区域能够自适应不同比例
+  .smm-node-content {
+    // 不限制宽高比，让内容决定节点形状
+    aspect-ratio: auto !important;
+    
+    // 确保能够根据内容自动调整
+    width: auto;
+    height: auto;
+  }
+  
+  // SVG foreignObject 元素（包裹节点内容）
+  foreignObject {
+    // 允许宽度和高度独立变化
+    &[width][height] {
+      // 不强制比例，保持图片原始比例
+      aspect-ratio: attr(width) / attr(height);
+    }
+  }
+}
+
+// 针对纯图片节点的特殊优化
+.doc-mind-map-container {
+  // 当节点只包含图片时
+  .smm-node:has(image):not(:has(.smm-text-content)) {
+    // 节点形状完全适应图片
+    rect {
+      // 让矩形背景跟随图片尺寸
+      width: auto;
+      height: auto;
+    }
+  }
+}
+
+// 确保图片能够保持原始宽高比
+.node-img-handle {
+  // 调整按钮容器也要跟随图片比例
+  aspect-ratio: auto !important;
+}
+
+// 嵌入式思维导图拖动调整大小样式
+.mindmap-embed-wrapper {
+  position: relative;
+  
+  .mindmap-container {
+    position: relative;
+    transition: height 0.1s ease-out;
+    
+    .mindmap-resize-handle {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 8px;
+      cursor: ns-resize;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+      
+      // 增加触摸区域（但不可见）
+      &::before {
+        content: '';
+        position: absolute;
+        top: -4px;
+        bottom: -4px;
+        left: 0;
+        right: 0;
+      }
+      
+      // 拖动指示器
+      div {
+        width: 40px;
+        height: 3px;
+        background: var(--b3-border-color);
+        border-radius: 2px;
+        opacity: 0.5;
+        transition: all 0.2s ease;
+      }
+      
+      &:hover div {
+        opacity: 1;
+        background: var(--b3-theme-primary);
+        width: 60px;
+      }
+    }
+  }
+}

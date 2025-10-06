@@ -1,0 +1,38 @@
+{
+  "name": "mymind",
+  "author": "ebAobS",
+  "url": "https://github.com/ebAobS/mymind",
+  "version": "1.0.0",
+  "minAppVersion": "2.9.0",
+  "disabledInPublish": false,
+  "backends": [
+    "all"
+  ],
+  "frontends": [
+    "all"
+  ],
+  "displayName": {
+    "default": "MyMind - Multi-dimensional Mind Map",
+    "zh_CN": "MyMind - 多维思维导图"
+  },
+  "description": {
+    "default": "Multi-dimensional mind map plugin: document tree mind map, document structure mind map, and embeddable mind map blocks for comprehensive document visualization.",
+    "zh_CN": "多维度思维导图插件：文档树思维导图、文档结构思维导图、嵌入式思维导图块，全方位可视化展示文档结构。"
+  },
+  "readme": {
+    "default": "README.md",
+    "zh_CN": "README_zh_CN.md"
+  },
+  "funding": {
+    "custom": [
+      "https://i0.hdslb.com/bfs/openplatform/12bb6dd415d52c76318b4fb391f179e69d263a54.png@1e_1c.webp"
+    ]
+  },
+  "keywords": [
+    "思维导图",
+    "mindmap",
+    "文档树",
+    "可视化",
+    "visualization"
+  ]
+}
