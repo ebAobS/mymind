@@ -2,8 +2,8 @@
   "name": "mymind",
   "author": "ebAobS",
   "url": "https://github.com/ebAobS/mymind",
-  "version": "1.0.0",
-  "minAppVersion": "2.9.0",
+  "version": "1.0.1",
+  "minAppVersion": "3.3.0",
   "disabledInPublish": false,
   "backends": [
     "all"
@@ -29,10 +29,6 @@
     ]
   },
   "keywords": [
-    "思维导图",
-    "mindmap",
-    "文档树",
-    "可视化",
-    "visualization"
+    "mindmap"
   ]
 }

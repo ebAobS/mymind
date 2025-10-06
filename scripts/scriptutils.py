@@ -203,6 +203,9 @@ def create_zip(root_path, file_name, ignored=[], storage_path=None):
         zip_root = os.path.join(root_path, file_name)
 
     zipf = zipfile.ZipFile(zip_root, 'w', zipfile.ZIP_STORED)
+    
+    # 规范化根路径，确保跨平台兼容
+    root_path_normalized = os.path.abspath(root_path)
 
     def iter_subtree(path, layer=0):
         # iter the directory
@@ -210,7 +213,13 @@ def create_zip(root_path, file_name, ignored=[], storage_path=None):
         for p in path.iterdir():
             if layer == 0 and p.name in ignored:
                 continue
-            zipf.write(p, str(p).replace(root_path, '').lstrip('/'))
+            
+            # 使用 os.path.relpath 获取相对路径，确保跨平台兼容
+            relative_path = os.path.relpath(str(p), root_path_normalized)
+            # 统一使用正斜杠作为压缩包内的路径分隔符
+            archive_name = relative_path.replace(os.sep, '/')
+            
+            zipf.write(p, archive_name)
 
             if p.is_dir():
                 iter_subtree(p, layer=layer + 1)

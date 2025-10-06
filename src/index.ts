@@ -93,6 +93,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
     private lastNodeMap: Map<string, any> = new Map(); // 用于跟踪节点变化
     private embeddedMindMaps: Map<string, any> = new Map(); // 嵌入的思维导图实例
     private isInitializing: boolean = false; // 标记是否正在初始化，防止初始渲染时触发重命名
+    private documentObserver: MutationObserver | null = null; // 文档变化监听器
     typedI18n: typeof zh_CN
 
     async onload() {
@@ -1069,14 +1070,24 @@ export default class SiYuanDocTreePlugin extends Plugin {
     }
 
     async onunload() {
+        // 断开文档变化监听器
+        if (this.documentObserver) {
+            this.documentObserver.disconnect();
+            this.documentObserver = null;
+        }
+        
+        // 清理主思维导图实例
         if (this.mindMap) {
             this.mindMap.destroy();
             this.mindMap = null;
         }
+        
+        // 清理文档思维导图实例
         if (this.docMindMap) {
             this.docMindMap.destroy();
             this.docMindMap = null;
         }
+        
         // 清理所有嵌入的思维导图实例
         this.embeddedMindMaps.forEach((mindMap) => {
             if (mindMap) {
@@ -1084,12 +1095,12 @@ export default class SiYuanDocTreePlugin extends Plugin {
             }
         });
         this.embeddedMindMaps.clear();
+        
         // 清理节点映射
         this.lastNodeMap.clear();
+        
+        // 清理暗黑模式样式类
         this.cleanDarkModeClass();
-    }
-
-    uninstall() {
     }
 
     private initDarkTheme() {
@@ -3374,7 +3385,12 @@ export default class SiYuanDocTreePlugin extends Plugin {
      * 监听文档变化，自动初始化新插入的思维导图块
      */
     observeDocumentChanges() {
-        const observer = new MutationObserver((mutations) => {
+        // 如果已经存在监听器，先断开
+        if (this.documentObserver) {
+            this.documentObserver.disconnect();
+        }
+
+        this.documentObserver = new MutationObserver((mutations) => {
             mutations.forEach((mutation) => {
                 // 监听属性变化
                 if (mutation.type === 'attributes' && mutation.attributeName === 'custom-mindmap-id') {
@@ -3432,7 +3448,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             });
         });
 
-        observer.observe(document.body, {
+        this.documentObserver.observe(document.body, {
             childList: true,
             subtree: true,
             attributes: true,

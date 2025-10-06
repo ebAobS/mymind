@@ -14,13 +14,17 @@ if __name__ == "__main__":
     v = data["version"]
 
     src_folder = dist_folder
-    tmp_folder_name = "./mymind"
     build_zip_path = "./build"
     build_zip_name = "mymind-" + v + ".zip"
 
     try:
-        # 压缩dist为zip
-        scriptutils.zip_folder(src_folder, tmp_folder_name, build_zip_path, build_zip_name)
+        # 创建build目录
+        scriptutils.mkdir(build_zip_path)
+        
+        # 直接压缩dist文件夹的内容，不添加额外的文件夹层级
+        scriptutils.create_zip(src_folder, build_zip_name, [], build_zip_path)
+        
+        # 复制一份为package.zip
         scriptutils.cp_file(os.path.join(build_zip_path, build_zip_name), os.path.join(build_zip_path, "package.zip"))
     except Exception as e:
         print(f"打包错误,{str(e)}")

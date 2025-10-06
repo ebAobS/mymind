@@ -229,6 +229,16 @@
     <div style="margin-top: 1.5em; padding: 1.5em; background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 1px solid #bae6fd; border-radius: 8px; box-shadow: 0 4px 12px rgba(14,165,233,0.15);">
         <h2 style="color: #0ea5e9; margin: 0 0 1em; text-align: center; font-size: 1.3em;">🚀 更新日志</h2>
         
+<strong style="color: #6366f1; font-size: 1.1em;">📅 v1.0.1 (2025-10-06)</strong>
+<ul style="margin: 0.5em 0; padding-left: 1.2em;">
+<li style="margin: 0.3em 0;"><strong style="color: #ef4444;">🐛 Bug 修复</strong>
+<ul style="margin: 0.2em 0; padding-left: 1em;">
+<li>修复卸载逻辑缺失导致的内存泄漏问题</li>
+<li>修复打包脚本多包一层文件夹的问题</li>
+</ul>
+</li>
+</ul>
+
 <strong style="color: #6366f1; font-size: 1.1em;">📅 v1.0.0 首个正式版本 (2025-10-06)</strong>
 <ul style="margin: 0.5em 0; padding-left: 1.2em;">
 <li style="margin: 0.3em 0;"><strong style="color: #10b981;">🎉 首次发布</strong>
