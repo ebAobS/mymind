@@ -305,12 +305,8 @@ export default class SiYuanDocTreePlugin extends Plugin {
         // 监听文档变化，自动初始化新插入的思维导图块
         this.observeDocumentChanges();
 
-        // 定时检测文档刷新后需要重新加载的思维导图块
-        // 每5秒检查一次是否有未加载的思维导图块
-        setInterval(() => {
-            this.checkAndReloadMindMaps();
-        }, 5000);
-
+        // 监听文档切换和刷新事件
+        this.observeDocumentSwitch();
     }
 
     /**
@@ -346,19 +342,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             }
         });
         
-        // 分隔线
-        menu.addSeparator();
-        
-        // 4. 检测并加载嵌入思维导图
-        menu.addItem({
-            icon: "iconRefresh",
-            label: "检测并加载嵌入思维导图",
-            click: () => {
-                this.reloadAllEmbeddedMindMaps();
-            }
-        });
-        
-        // 5. 设置
+        // 4. 设置
         menu.addItem({
             icon: "iconSettings",
             label: "设置",
@@ -3166,32 +3150,16 @@ export default class SiYuanDocTreePlugin extends Plugin {
 
     /**
      * 初始化单个嵌入的思维导图
-     * @param blockId 块ID
-     * @param docId 文档ID
-     * @param docTitle 文档标题
-     * @param forceReload 是否强制重新加载（用于文档刷新后重新加载）
      */
-    async initEmbeddedMindMap(blockId: string, docId: string, docTitle: string, forceReload: boolean = false) {
+    async initEmbeddedMindMap(blockId: string, docId: string, docTitle: string) {
         try {
-            // 如果强制重新加载，先清理旧实例
-            if (forceReload) {
-                if (this.embeddedMindMaps.has(blockId)) {
-                    const oldMindMap = this.embeddedMindMaps.get(blockId);
-                    if (oldMindMap && typeof oldMindMap.destroy === 'function') {
-                        oldMindMap.destroy();
-                    }
-                    this.embeddedMindMaps.delete(blockId);
-                    this.debugLog('强制重新加载，已清理旧实例:', blockId);
-                }
-            } else {
-                // 防止重复初始化
-                if (this.embeddedMindMaps.has(blockId)) {
-                    this.debugLog('思维导图已初始化，跳过:', blockId);
-                    return;
-                }
+            // 防止重复初始化
+            if (this.embeddedMindMaps.has(blockId)) {
+                this.debugLog('思维导图已初始化，跳过:', blockId);
+                return;
             }
             
-            this.debugLog('initEmbeddedMindMap 被调用:', { blockId, docId, docTitle, forceReload });
+            this.debugLog('initEmbeddedMindMap 被调用:', { blockId, docId, docTitle });
             
             // 使用 data-node-id 属性查找块元素
             const blockElement = document.querySelector(`[data-node-id="${blockId}"]`) as HTMLElement;
@@ -3201,15 +3169,10 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 return;
             }
 
-            // 检查是否已经有 mindmap-embed-wrapper
+            // 检查是否已经有 mindmap-embed-wrapper（避免重复创建）
             let wrapperDiv = blockElement.querySelector('.mindmap-embed-wrapper') as HTMLElement;
             
-            // 如果是强制重新加载且已有wrapper，先移除它
-            if (forceReload && wrapperDiv) {
-                wrapperDiv.remove();
-                wrapperDiv = null;
-                this.debugLog('强制重新加载，已移除旧的wrapper');
-            } else if (wrapperDiv && !forceReload) {
+            if (wrapperDiv) {
                 this.debugLog('思维导图已渲染，跳过');
                 return;
             }
@@ -3251,23 +3214,6 @@ export default class SiYuanDocTreePlugin extends Plugin {
                     <span style="font-size: 14px; font-weight: 500; color: var(--b3-theme-on-background);">${docTitle}</span>
                 `;
                 
-                // 按钮容器
-                const buttonsDiv = document.createElement('div');
-                buttonsDiv.style.cssText = 'display: flex; gap: 8px;';
-                
-                // 重新加载按钮
-                const reloadBtn = document.createElement('button');
-                reloadBtn.className = 'b3-button b3-button--outline';
-                reloadBtn.style.cssText = 'padding: 4px 12px; font-size: 12px;';
-                reloadBtn.innerHTML = `
-                    <svg style="width: 12px; height: 12px;"><use xlink:href="#iconRefresh"></use></svg>
-                    <span style="margin-left: 4px;">重新加载</span>
-                `;
-                reloadBtn.onclick = () => {
-                    this.initEmbeddedMindMap(blockId, docId, docTitle, true);
-                };
-                
-                // 展开按钮
                 const expandBtn = document.createElement('button');
                 expandBtn.className = 'b3-button b3-button--outline expand-mindmap-btn';
                 expandBtn.style.cssText = 'padding: 4px 12px; font-size: 12px;';
@@ -3277,11 +3223,8 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 `;
                 expandBtn.onclick = () => this.openDocMindMapDialogForDoc(docId, docTitle);
                 
-                buttonsDiv.appendChild(reloadBtn);
-                buttonsDiv.appendChild(expandBtn);
-                
                 headerDiv.appendChild(titleDiv);
-                headerDiv.appendChild(buttonsDiv);
+                headerDiv.appendChild(expandBtn);
                 
                 // 创建思维导图容器
                 const mindmapContainer = document.createElement('div');
@@ -3457,99 +3400,95 @@ export default class SiYuanDocTreePlugin extends Plugin {
     }
 
     /**
+     * 从块元素中提取信息并加载思维导图
+     * 这是一个通用的加载函数，被多个场景调用
+     * @param blockElement 块元素
+     * @param forceReload 是否强制重新加载（用于文档刷新后）
+     */
+    private loadMindMapFromElement(blockElement: Element, forceReload: boolean = false) {
+        const blockId = blockElement.getAttribute('data-node-id');
+        if (!blockId) return;
+        
+        // 如果已经初始化且不是强制重载，跳过
+        if (!forceReload && this.embeddedMindMaps.has(blockId)) return;
+        
+        // 检查是否已经有 mindmap-embed-wrapper（表示已经渲染过）
+        // 强制重载时会清除旧的 wrapper
+        if (!forceReload && blockElement.querySelector('.mindmap-embed-wrapper')) return;
+        
+        // 从自定义属性获取数据
+        const docId = blockElement.getAttribute('custom-doc-id');
+        const encodedTitle = blockElement.getAttribute('custom-doc-title');
+        
+        if (docId && encodedTitle) {
+            const docTitle = decodeURIComponent(encodedTitle);
+            this.debugLog('发现嵌入思维导图块:', { blockId, docId, docTitle, forceReload });
+            
+            // 如果是强制重载，先清理旧实例
+            if (forceReload && this.embeddedMindMaps.has(blockId)) {
+                const oldMindMap = this.embeddedMindMaps.get(blockId);
+                if (oldMindMap && typeof oldMindMap.destroy === 'function') {
+                    oldMindMap.destroy();
+                }
+                this.embeddedMindMaps.delete(blockId);
+                
+                // 清除旧的 wrapper
+                const oldWrapper = blockElement.querySelector('.mindmap-embed-wrapper');
+                if (oldWrapper) {
+                    oldWrapper.remove();
+                }
+                this.debugLog('强制重载，已清理旧实例:', blockId);
+            }
+            
+            this.initEmbeddedMindMap(blockId, docId, docTitle);
+        }
+    }
+
+    /**
      * 初始化所有已存在的嵌入式思维导图
      */
     initAllEmbeddedMindMaps() {
         // 查找所有带有自定义属性的块
         const blocks = document.querySelectorAll('[custom-mindmap-id]');
-        this.debugLog('找到', blocks.length, '个嵌入思维导图块');
+        this.debugLog('批量检测：找到', blocks.length, '个嵌入思维导图块');
         
+        blocks.forEach((blockElement) => {
+            this.loadMindMapFromElement(blockElement, false);
+        });
+    }
+
+    /**
+     * 检测并重新加载当前可见文档中的思维导图块
+     * 用于文档切换或刷新后重新加载
+     */
+    private reloadVisibleMindMaps() {
+        this.debugLog('重新检测当前文档中的思维导图块...');
+        
+        // 查找所有带有自定义属性的块
+        const blocks = document.querySelectorAll('[custom-mindmap-id]');
+        this.debugLog('当前文档：找到', blocks.length, '个嵌入思维导图块');
+        
+        if (blocks.length === 0) return;
+        
+        let reloadCount = 0;
         blocks.forEach((blockElement) => {
             const blockId = blockElement.getAttribute('data-node-id');
             if (!blockId) return;
             
-            // 如果已经初始化，跳过
-            if (this.embeddedMindMaps.has(blockId)) return;
-            
-            // 检查是否已经有 mindmap-embed-wrapper（表示已经渲染过）
-            if (blockElement.querySelector('.mindmap-embed-wrapper')) return;
-            
-            // 从自定义属性获取数据
-            const docId = blockElement.getAttribute('custom-doc-id');
-            const encodedTitle = blockElement.getAttribute('custom-doc-title');
-            
-            if (docId && encodedTitle) {
-                const docTitle = decodeURIComponent(encodedTitle);
-                this.debugLog('发现嵌入思维导图块:', { blockId, docId, docTitle });
-                this.initEmbeddedMindMap(blockId, docId, docTitle);
-            }
-        });
-    }
-
-    /**
-     * 重新检测并加载所有嵌入的思维导图（强制重新加载）
-     * 用于文档刷新后或用户手动触发
-     */
-    reloadAllEmbeddedMindMaps() {
-        this.debugLog('开始重新检测并加载所有嵌入的思维导图...');
-        
-        // 查找所有带有自定义属性的块
-        const blocks = document.querySelectorAll('[custom-mindmap-id]');
-        this.debugLog('找到', blocks.length, '个嵌入思维导图块');
-        
-        let loadedCount = 0;
-        blocks.forEach((blockElement) => {
-            const blockId = blockElement.getAttribute('data-node-id');
-            const docId = blockElement.getAttribute('custom-doc-id');
-            const encodedTitle = blockElement.getAttribute('custom-doc-title');
-            
-            if (blockId && docId && encodedTitle) {
-                const docTitle = decodeURIComponent(encodedTitle);
-                this.debugLog('重新加载嵌入思维导图块:', { blockId, docId, docTitle });
-                this.initEmbeddedMindMap(blockId, docId, docTitle, true); // forceReload = true
-                loadedCount++;
-            }
-        });
-        
-        if (loadedCount > 0) {
-            showMessage(`已重新加载 ${loadedCount} 个嵌入的思维导图`, 2000, 'info');
-        } else {
-            showMessage('未发现嵌入的思维导图块', 2000, 'info');
-        }
-    }
-
-    /**
-     * 检查并自动加载未初始化的思维导图块
-     * 用于文档刷新后自动检测
-     */
-    private checkAndReloadMindMaps() {
-        // 查找所有带有自定义属性的块
-        const blocks = document.querySelectorAll('[custom-mindmap-id]');
-        
-        blocks.forEach((blockElement) => {
-            const blockId = blockElement.getAttribute('data-node-id');
-            const docId = blockElement.getAttribute('custom-doc-id');
-            const encodedTitle = blockElement.getAttribute('custom-doc-title');
-            
-            if (!blockId || !docId || !encodedTitle) return;
-            
-            // 检查是否已经有wrapper（表示已初始化）
+            // 检查是否已经有 wrapper（表示已渲染）
             const hasWrapper = blockElement.querySelector('.mindmap-embed-wrapper');
             
-            // 如果没有wrapper但存在于DOM中，说明文档刷新后需要重新加载
+            // 如果在内存中有记录但没有 wrapper，说明需要重新加载
+            // 或者如果没有 wrapper 也没有记录，也需要加载
             if (!hasWrapper) {
-                const docTitle = decodeURIComponent(encodedTitle);
-                this.debugLog('检测到未加载的思维导图块，自动加载:', { blockId, docId, docTitle });
-                
-                // 清理可能残留的旧实例引用
-                if (this.embeddedMindMaps.has(blockId)) {
-                    this.embeddedMindMaps.delete(blockId);
-                }
-                
-                // 初始化
-                this.initEmbeddedMindMap(blockId, docId, docTitle);
+                this.loadMindMapFromElement(blockElement, true);
+                reloadCount++;
             }
         });
+        
+        if (reloadCount > 0) {
+            this.debugLog(`已触发 ${reloadCount} 个思维导图块的重新加载`);
+        }
     }
 
     /**
@@ -3566,17 +3505,10 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 // 监听属性变化
                 if (mutation.type === 'attributes' && mutation.attributeName === 'custom-mindmap-id') {
                     const element = mutation.target as HTMLElement;
-                    const blockId = element.getAttribute('data-node-id');
-                    const docId = element.getAttribute('custom-doc-id');
-                    const encodedTitle = element.getAttribute('custom-doc-title');
-                    
-                    if (blockId && docId && encodedTitle && !this.embeddedMindMaps.has(blockId)) {
-                        const docTitle = decodeURIComponent(encodedTitle);
-                        this.debugLog('检测到新的嵌入思维导图块:', { blockId, docId, docTitle });
-                        setTimeout(() => {
-                            this.initEmbeddedMindMap(blockId, docId, docTitle);
-                        }, 1000);
-                    }
+                    this.debugLog('检测到属性变化的思维导图块');
+                    setTimeout(() => {
+                        this.loadMindMapFromElement(element, false);
+                    }, 1000);
                 }
                 
                 // 监听新增节点
@@ -3586,33 +3518,19 @@ export default class SiYuanDocTreePlugin extends Plugin {
                         
                         // 检查元素本身
                         if (element.hasAttribute?.('custom-mindmap-id')) {
-                            const blockId = element.getAttribute('data-node-id');
-                            const docId = element.getAttribute('custom-doc-id');
-                            const encodedTitle = element.getAttribute('custom-doc-title');
-                            
-                            if (blockId && docId && encodedTitle && !this.embeddedMindMaps.has(blockId)) {
-                                const docTitle = decodeURIComponent(encodedTitle);
-                                this.debugLog('检测到新的嵌入思维导图块:', { blockId, docId, docTitle });
-                                setTimeout(() => {
-                                    this.initEmbeddedMindMap(blockId, docId, docTitle);
-                                }, 1000);
-                            }
+                            this.debugLog('检测到新增的思维导图块（元素本身）');
+                            setTimeout(() => {
+                                this.loadMindMapFromElement(element, false);
+                            }, 1000);
                         }
                         
                         // 检查子元素
                         const blocks = element.querySelectorAll?.('[custom-mindmap-id]');
                         blocks?.forEach((block) => {
-                            const blockId = block.getAttribute('data-node-id');
-                            const docId = block.getAttribute('custom-doc-id');
-                            const encodedTitle = block.getAttribute('custom-doc-title');
-                            
-                            if (blockId && docId && encodedTitle && !this.embeddedMindMaps.has(blockId)) {
-                                const docTitle = decodeURIComponent(encodedTitle);
-                                this.debugLog('检测到新的嵌入思维导图块:', { blockId, docId, docTitle });
-                                setTimeout(() => {
-                                    this.initEmbeddedMindMap(blockId, docId, docTitle);
-                                }, 1000);
-                            }
+                            this.debugLog('检测到新增的思维导图块（子元素）');
+                            setTimeout(() => {
+                                this.loadMindMapFromElement(block, false);
+                            }, 1000);
                         });
                     }
                 });
@@ -3628,12 +3546,83 @@ export default class SiYuanDocTreePlugin extends Plugin {
     }
 
     /**
+     * 监听文档切换和刷新事件
+     * 用于处理文档切换或刷新后重新加载思维导图块
+     */
+    observeDocumentSwitch() {
+        this.debugLog('开始监听文档切换和刷新事件...');
+        
+        let reloadTimer: number | null = null;
+        
+        // 节流触发重载的通用函数
+        const triggerReload = (reason: string) => {
+            this.debugLog(`触发重载: ${reason}`);
+            
+            // 使用节流，避免短时间内多次触发
+            if (reloadTimer) {
+                clearTimeout(reloadTimer);
+            }
+            
+            reloadTimer = window.setTimeout(() => {
+                this.reloadVisibleMindMaps();
+                reloadTimer = null;
+            }, 500);
+        };
+        
+        // 1. 监听 loaded-protyle-static 事件（文档静态加载完成，包括刷新按钮）
+        this.eventBus.on('loaded-protyle-static', (event) => {
+            this.debugLog('检测到 loaded-protyle-static 事件（文档刷新）', event.detail);
+            triggerReload('loaded-protyle-static');
+        });
+        
+        // 2. 监听 loaded-protyle-dynamic 事件（文档动态加载）
+        this.eventBus.on('loaded-protyle-dynamic', (event) => {
+            this.debugLog('检测到 loaded-protyle-dynamic 事件（文档动态加载）', event.detail);
+            triggerReload('loaded-protyle-dynamic');
+        });
+        
+        // 3. 作为兜底，使用 MutationObserver 检测 DOM 大范围变化
+        const protyleObserver = new MutationObserver((mutations) => {
+            let hasSignificantChange = false;
+            
+            for (const mutation of mutations) {
+                if (mutation.addedNodes.length > 0) {
+                    mutation.addedNodes.forEach((node) => {
+                        if (node.nodeType === Node.ELEMENT_NODE) {
+                            const element = node as Element;
+                            // 检查是否是 protyle 内容容器
+                            if (element.classList?.contains('protyle-content') || 
+                                element.querySelector?.('.protyle-content')) {
+                                hasSignificantChange = true;
+                            }
+                        }
+                    });
+                }
+            }
+            
+            if (hasSignificantChange) {
+                this.debugLog('检测到 protyle-content 容器变化（MutationObserver 兜底）');
+                triggerReload('MutationObserver');
+            }
+        });
+        
+        // 监听整个文档，但只关注子节点的添加
+        protyleObserver.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+        
+        this.debugLog('文档切换和刷新监听已启动（EventBus + MutationObserver 双重保障）');
+    }
+
+    /**
      * 绑定思维导图容器的拖动调整高度功能
      */
     bindResizeHandle(resizeHandle: HTMLElement, container: HTMLElement, blockElement: HTMLElement) {
         let startY = 0;
         let startHeight = 0;
         let isResizing = false;
+        let resizeTimer: number | null = null;
 
         const onMouseDown = (e: MouseEvent) => {
             e.preventDefault();
@@ -3659,12 +3648,33 @@ export default class SiYuanDocTreePlugin extends Plugin {
             const newHeight = Math.max(200, Math.min(1200, startHeight + deltaY)); // 限制高度在 200-1200px 之间
             
             container.style.height = `${newHeight}px`;
+            
+            // 使用节流优化：拖动过程中每150ms更新一次思维导图画布大小
+            if (resizeTimer) {
+                clearTimeout(resizeTimer);
+            }
+            resizeTimer = window.setTimeout(() => {
+                const blockId = blockElement.getAttribute('data-node-id');
+                if (blockId && this.embeddedMindMaps.has(blockId)) {
+                    const mindMap = this.embeddedMindMaps.get(blockId);
+                    if (mindMap && typeof mindMap.resize === 'function') {
+                        mindMap.resize();
+                        this.debugLog('拖动中更新思维导图画布大小:', newHeight);
+                    }
+                }
+            }, 150);
         };
 
         const onMouseUp = () => {
             if (!isResizing) return;
             
             isResizing = false;
+            
+            // 清除定时器
+            if (resizeTimer) {
+                clearTimeout(resizeTimer);
+                resizeTimer = null;
+            }
             
             // 恢复样式
             document.body.style.cursor = '';
@@ -3678,14 +3688,19 @@ export default class SiYuanDocTreePlugin extends Plugin {
             const finalHeight = container.offsetHeight;
             blockElement.setAttribute('custom-mindmap-height', finalHeight.toString());
             
-            // 触发思维导图重新渲染
+            // 触发思维导图画布调整和重新渲染
             const blockId = blockElement.getAttribute('data-node-id');
             if (blockId && this.embeddedMindMaps.has(blockId)) {
                 const mindMap = this.embeddedMindMaps.get(blockId);
                 if (mindMap) {
-                    // 延迟渲染，确保容器尺寸已更新
+                    // 延迟执行，确保容器尺寸已完全更新
                     setTimeout(() => {
-                        mindMap.render();
+                        // 先调用 resize() 更新画布尺寸
+                        if (typeof mindMap.resize === 'function') {
+                            mindMap.resize();
+                            this.debugLog('最终更新思维导图画布大小:', finalHeight);
+                        }
+                        // resize() 方法会自动触发重新渲染，无需再调用 render()
                     }, 50);
                 }
             }

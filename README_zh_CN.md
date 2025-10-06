@@ -229,6 +229,17 @@
     <div style="margin-top: 1.5em; padding: 1.5em; background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 1px solid #bae6fd; border-radius: 8px; box-shadow: 0 4px 12px rgba(14,165,233,0.15);">
         <h2 style="color: #0ea5e9; margin: 0 0 1em; text-align: center; font-size: 1.3em;">🚀 更新日志</h2>
         
+<strong style="color: #6366f1; font-size: 1.1em;">📅 v1.0.3 (2025-10-06)</strong>
+<ul style="margin: 0.5em 0; padding-left: 1.2em;">
+<li style="margin: 0.3em 0;"><strong style="color: #ef4444;">🐛 Bug 修复</strong>
+<ul style="margin: 0.2em 0; padding-left: 1em;">
+<li>修复嵌入思维导图块重新加载的问题：支持刷新按钮、文档切换后自动重新加载</li>
+<li>监听思源官方事件，确保检测准确性</li>
+<li>智能节流机制，防止重复加载</li>
+</ul>
+</li>
+</ul>
+
 <strong style="color: #6366f1; font-size: 1.1em;">📅 v1.0.2 (2025-10-06)</strong>
 <ul style="margin: 0.5em 0; padding-left: 1.2em;">
 <li style="margin: 0.3em 0;"><strong style="color: #10b981;">✨ 新特性</strong>
