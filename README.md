@@ -2,6 +2,7 @@
     <div style="text-align: center; padding: 2em; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 12px;">
         <h1 style="color: white; margin: 0; font-size: 2.2em;">🧠 MyMind - Multi-dimensional Mind Map</h1>
         <div style="color: rgba(255,255,255,0.9); margin-top: 0.5em; font-size: 1.1em;">A comprehensive mind mapping plugin for visualizing SiYuan Note document structures from multiple perspectives</div>
+        <div style="color: #ffd700; margin-top: 0.8em; font-size: 1.2em; font-weight: bold; text-shadow: 0 0 10px rgba(255,215,0,0.5);">🆓 PERMANENTLY FREE & OPEN SOURCE</div>
         <div style="margin-top: 1.5em; display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">
             <a href="https://github.com/ebAobS/mymind/blob/main/CHANGELOG.md"
                style="padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; border-radius: 6px; text-decoration: none; font-size: 0.9em;">🗓 Changelog</a>
@@ -22,10 +23,7 @@
                 <strong>Author</strong>: ebAobS
             </li>
             <li style="margin: 0.5em 0; padding: 10px 14px; background: white; border-radius: 8px; border-left: 4px solid #f59e0b; box-shadow: 0 2px 4px rgba(245,158,11,0.08);">
-                <strong>Contact</strong>: WeChat ebAobS, welcome to join the discussion group
-            </li>
-            <li style="margin: 0.5em 0; padding: 10px 14px; background: white; border-radius: 8px; border-left: 4px solid #f59e0b; box-shadow: 0 2px 4px rgba(245,158,11,0.08);">
-                <strong>License</strong>: MIT License
+                <strong>License</strong>: MIT License - <span style="color: #10b981; font-weight: bold;">Permanently Free & Open Source</span>
             </li>
         </ul>
     </div>
@@ -214,21 +212,44 @@
             </li>
         </ul>
     </div>
-    <!-- Support the Author -->
-    <div style="margin-top: 1.5em; padding: 1.5em; background: linear-gradient(135deg, #fef3f2, #fee2e2); border: 1px solid #fca5a5; border-radius: 8px; box-shadow: 0 4px 12px rgba(239,68,68,0.15);">
-        <h2 style="color: #dc2626; margin: 0 0 1em; text-align: center; font-size: 1.3em;">🫧 Support the Author</h2>
-        <p style="margin: 0.5em 0;">If MyMind Multi-dimensional Mind Map plugin helps your work and study, please consider giving a like or buying the author a coffee. This encourages continued optimization and development of more useful features:</p>
-        <div style="margin: 1em 0; text-align: center;">
-            <img src="https://i0.hdslb.com/bfs/openplatform/12bb6dd415d52c76318b4fb391f179e69d263a54.png@1e_1c.webp"
-                 alt="Donation QR Code"
-                 style="width: 280px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-            <p style="margin: 0.5em 0; color: #666;">WeChat/Alipay</p>
+    <!-- Join Community & Support -->
+    <div style="margin-top: 1.5em; padding: 1.5em; background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 2px solid #0ea5e9; border-radius: 8px; box-shadow: 0 4px 12px rgba(14,165,233,0.25);">
+        <h2 style="color: #0ea5e9; margin: 0 0 1em; text-align: center; font-size: 1.4em;">💬 Join Our Community</h2>
+        <div style="background: white; padding: 1.5em; border-radius: 8px; border-left: 4px solid #0ea5e9; text-align: center;">
+            <p style="margin: 0.5em 0; font-size: 1.1em; color: #0369a1;"><strong>📱 WeChat: ebAobS</strong></p>
+            <p style="margin: 0.5em 0; color: #666;">Join our discussion group for feedback, feature requests, and community support!</p>
+            <div style="margin: 1em 0; padding: 1em; background: linear-gradient(135deg, #fef3f2, #fee2e2); border-radius: 8px; border: 1px solid #fca5a5;">
+                <p style="margin: 0.5em 0; font-size: 1.1em; color: #dc2626;"><strong>🫧 Support the Author</strong></p>
+                <p style="margin: 0.5em 0; color: #666;">If MyMind helps your work and study, consider supporting the author:</p>
+                <img src="https://i0.hdslb.com/bfs/openplatform/12bb6dd415d52c76318b4fb391f179e69d263a54.png@1e_1c.webp"
+                     alt="Donation QR Code"
+                     style="width: 200px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <p style="margin: 0.5em 0; color: #666; font-size: 0.9em;">WeChat/Alipay</p>
+            </div>
         </div>
     </div>
     <!-- Changelog -->
     <div style="margin-top: 1.5em; padding: 1.5em; background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 1px solid #bae6fd; border-radius: 8px; box-shadow: 0 4px 12px rgba(14,165,233,0.15);">
         <h2 style="color: #0ea5e9; margin: 0 0 1em; text-align: center; font-size: 1.3em;">🚀 Changelog</h2>
         
+<strong style="color: #6366f1; font-size: 1.1em;">📅 v1.0.4 (2025-10-07)</strong>
+<ul style="margin: 0.5em 0; padding-left: 1.2em;">
+<li style="margin: 0.3em 0;"><strong style="color: #ef4444;">🐛 Bug Fixes</strong>
+<ul style="margin: 0.2em 0; padding-left: 1em;">
+<li>Fixed XMind import image saving functionality: automatically uploads base64 images to SiYuan assets folder</li>
+<li>Added intelligent image processing with duplicate prevention</li>
+<li>Fixed import/export dialog cancel button functionality</li>
+</ul>
+</li>
+<li style="margin: 0.3em 0;"><strong style="color: #10b981;">✨ Feature Improvements</strong>
+<ul style="margin: 0.2em 0; padding-left: 1em;">
+<li>Optimized import/export option order, XMind import prioritized with "supports images" label</li>
+<li>Removed Markdown import feature, guides users to use SiYuan official import</li>
+<li>Enhanced user interface with clearer import guidance</li>
+</ul>
+</li>
+</ul>
+
 <strong style="color: #6366f1; font-size: 1.1em;">📅 v1.0.3 (2025-10-06)</strong>
 <ul style="margin: 0.5em 0; padding-left: 1.2em;">
 <li style="margin: 0.3em 0;"><strong style="color: #ef4444;">🐛 Bug Fixes</strong>

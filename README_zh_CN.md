@@ -2,6 +2,7 @@
     <div style="text-align: center; padding: 2em; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 12px;">
         <h1 style="color: white; margin: 0; font-size: 2.2em;">🧠 MyMind - 多维思维导图</h1>
         <div style="color: rgba(255,255,255,0.9); margin-top: 0.5em; font-size: 1.1em;">全方位可视化展示思源笔记文档结构的思维导图插件</div>
+        <div style="color: #ffd700; margin-top: 0.8em; font-size: 1.2em; font-weight: bold; text-shadow: 0 0 10px rgba(255,215,0,0.5);">🆓 永久免费开源</div>
         <div style="margin-top: 1.5em; display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">
             <a href="https://github.com/ebAobS/mymind/blob/main/CHANGELOG.md"
                style="padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; border-radius: 6px; text-decoration: none; font-size: 0.9em;">🗓 更新日志</a>
@@ -22,10 +23,7 @@
                 <strong>作者</strong>：ebAobS
             </li>
             <li style="margin: 0.5em 0; padding: 10px 14px; background: white; border-radius: 8px; border-left: 4px solid #f59e0b; box-shadow: 0 2px 4px rgba(245,158,11,0.08);">
-                <strong>联系方式</strong>：微信 ebAobS，欢迎加入交流群
-            </li>
-            <li style="margin: 0.5em 0; padding: 10px 14px; background: white; border-radius: 8px; border-left: 4px solid #f59e0b; box-shadow: 0 2px 4px rgba(245,158,11,0.08);">
-                <strong>开源协议</strong>：MIT License
+                <strong>开源协议</strong>：MIT License - <span style="color: #10b981; font-weight: bold;">永久免费开源</span>
             </li>
         </ul>
     </div>
@@ -214,21 +212,44 @@
             </li>
         </ul>
     </div>
-    <!-- 支持作者 -->
-    <div style="margin-top: 1.5em; padding: 1.5em; background: linear-gradient(135deg, #fef3f2, #fee2e2); border: 1px solid #fca5a5; border-radius: 8px; box-shadow: 0 4px 12px rgba(239,68,68,0.15);">
-        <h2 style="color: #dc2626; margin: 0 0 1em; text-align: center; font-size: 1.3em;">🫧 支持作者</h2>
-        <p style="margin: 0.5em 0;">如果 MyMind 多维思维导图插件对您的工作和学习有所帮助，欢迎给作者点个赞或打赏一杯咖啡，这将鼓励作者持续优化和开发更多实用功能：</p>
-        <div style="margin: 1em 0; text-align: center;">
-            <img src="https://i0.hdslb.com/bfs/openplatform/12bb6dd415d52c76318b4fb391f179e69d263a54.png@1e_1c.webp"
-                 alt="打赏二维码"
-                 style="width: 280px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-            <p style="margin: 0.5em 0; color: #666;">微信/支付宝</p>
+    <!-- 加入交流群 & 支持作者 -->
+    <div style="margin-top: 1.5em; padding: 1.5em; background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 2px solid #0ea5e9; border-radius: 8px; box-shadow: 0 4px 12px rgba(14,165,233,0.25);">
+        <h2 style="color: #0ea5e9; margin: 0 0 1em; text-align: center; font-size: 1.4em;">💬 加入交流群</h2>
+        <div style="background: white; padding: 1.5em; border-radius: 8px; border-left: 4px solid #0ea5e9; text-align: center;">
+            <p style="margin: 0.5em 0; font-size: 1.1em; color: #0369a1;"><strong>📱 微信：ebAobS</strong></p>
+            <p style="margin: 0.5em 0; color: #666;">欢迎加入交流群，获取最新动态、功能反馈和技术支持！</p>
+            <div style="margin: 1em 0; padding: 1em; background: linear-gradient(135deg, #fef3f2, #fee2e2); border-radius: 8px; border: 1px solid #fca5a5;">
+                <p style="margin: 0.5em 0; font-size: 1.1em; color: #dc2626;"><strong>🫧 支持作者</strong></p>
+                <p style="margin: 0.5em 0; color: #666;">如果 MyMind 对您有帮助，欢迎支持作者持续开发：</p>
+                <img src="https://i0.hdslb.com/bfs/openplatform/12bb6dd415d52c76318b4fb391f179e69d263a54.png@1e_1c.webp"
+                     alt="打赏二维码"
+                     style="width: 200px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <p style="margin: 0.5em 0; color: #666; font-size: 0.9em;">微信/支付宝</p>
+            </div>
         </div>
     </div>
     <!-- 更新日志 -->
     <div style="margin-top: 1.5em; padding: 1.5em; background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 1px solid #bae6fd; border-radius: 8px; box-shadow: 0 4px 12px rgba(14,165,233,0.15);">
         <h2 style="color: #0ea5e9; margin: 0 0 1em; text-align: center; font-size: 1.3em;">🚀 更新日志</h2>
         
+<strong style="color: #6366f1; font-size: 1.1em;">📅 v1.0.4 (2025-10-07)</strong>
+<ul style="margin: 0.5em 0; padding-left: 1.2em;">
+<li style="margin: 0.3em 0;"><strong style="color: #ef4444;">🐛 Bug 修复</strong>
+<ul style="margin: 0.2em 0; padding-left: 1em;">
+<li>修复XMind导入后保存图片的功能：自动将base64图片上传到思源assets文件夹</li>
+<li>添加智能图片处理，支持去重避免资源冗余</li>
+<li>修复导入导出对话框取消按钮失灵的问题</li>
+</ul>
+</li>
+<li style="margin: 0.3em 0;"><strong style="color: #10b981;">✨ 功能改进</strong>
+<ul style="margin: 0.2em 0; padding-left: 1em;">
+<li>优化导入导出选项顺序，XMind导入放在首位并标注"可导入图片"</li>
+<li>移除Markdown导入功能，引导用户使用思源官方导入功能</li>
+<li>改进用户界面提示，在导入界面中明确说明Markdown导入建议</li>
+</ul>
+</li>
+</ul>
+
 <strong style="color: #6366f1; font-size: 1.1em;">📅 v1.0.3 (2025-10-06)</strong>
 <ul style="margin: 0.5em 0; padding-left: 1.2em;">
 <li style="margin: 0.3em 0;"><strong style="color: #ef4444;">🐛 Bug 修复</strong>

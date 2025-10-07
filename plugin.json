@@ -2,7 +2,7 @@
   "name": "mymind",
   "author": "ebAobS",
   "url": "https://github.com/ebAobS/mymind",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "minAppVersion": "3.3.0",
   "disabledInPublish": false,
   "backends": [

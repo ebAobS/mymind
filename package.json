@@ -1,6 +1,6 @@
 {
   "name": "mymind",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "type": "module",
   "description": "思源笔记思维导图插件：文档树思维导图、文档思维导图、嵌入式思维导图块，多维度可视化展示文档结构。",
   "repository": "https://github.com/ebAobS/mymind",
@@ -38,6 +38,7 @@
   "dependencies": {
     "@siyuan-community/siyuan-sdk": "^0.3.14",
     "jszip": "^3.10.1",
-    "simple-mind-map": "^0.10.2"
+    "simple-mind-map": "^0.10.2",
+    "xml-js": "^1.6.11"
   }
 }

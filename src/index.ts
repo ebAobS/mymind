@@ -38,6 +38,8 @@ import ExportXMind from 'simple-mind-map/src/plugins/ExportXMind.js';
 import AssociativeLine from 'simple-mind-map/src/plugins/AssociativeLine.js';
 // @ts-ignore
 import { transformToMarkdown } from 'simple-mind-map/src/parse/toMarkdown.js';
+// @ts-ignore
+import xmind from 'simple-mind-map/src/parse/xmind.js';
 import { registerThemes, getThemeList } from '@/libs/themes';
 // @ts-ignore
 import JSZip from 'jszip';
@@ -169,7 +171,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             value: 3,
             type: "number",
             title: "文档树思维导图默认展开层级",
-            description: "设置文档树思维导图默认展开多少层（0 表示全部展开，≥1 表示展开的层数，最小为 1）",
+            description: "设置文档树思维导图默认展开多少层（0 = 全部展开，1 = 仅根节点，2 = 根节点+1层，3 = 根节点+2层，以此类推）",
             action: {
                 // 添加验证
                 callback: () => {
@@ -192,7 +194,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             value: 3,
             type: "number",
             title: "文档思维导图默认展开层级",
-            description: "设置文档思维导图和行内思维导图默认展开多少层（0 表示全部展开，≥1 表示展开的层数，最小为 1）",
+            description: "设置文档思维导图和行内思维导图默认展开多少层（0 = 全部展开，1 = 仅根节点，2 = 根节点+1层，3 = 根节点+2层，以此类推）",
             action: {
                 // 添加验证
                 callback: () => {
@@ -1915,27 +1917,23 @@ export default class SiYuanDocTreePlugin extends Plugin {
     /**
      * 设置节点的展开状态（在创建思维导图前调用）
      * @param node 节点数据
-     * @param targetLevel 目标展开层级（0表示全部展开，>=1表示展开的层数，最小为1）
+     * @param targetLevel 目标展开层级（0表示全部展开，1表示展开1层，以此类推）
      * @param currentLevel 当前层级（0表示根节点）
      */
     private setNodeExpandState(node: MindMapNode, targetLevel: number, currentLevel: number) {
         if (!node) return;
         
-        // 根节点始终展开
-        if (currentLevel === 0) {
+        // 根据层级设置展开状态
+        if (targetLevel === 0) {
+            // 0 表示全部展开
+            node.data.expand = true;
+        } else if (currentLevel < targetLevel) {
+            // 当前层级小于目标层级，展开
+            // 例如：targetLevel=3时，currentLevel为0,1,2的节点都展开
             node.data.expand = true;
         } else {
-            // 根据层级设置展开状态
-            if (targetLevel === 0) {
-                // 0 表示全部展开
-                node.data.expand = true;
-            } else if (currentLevel < targetLevel) {
-                // 当前层级小于目标层级，展开
-                node.data.expand = true;
-            } else {
-                // 当前层级大于等于目标层级，折叠
-                node.data.expand = false;
-            }
+            // 当前层级大于等于目标层级，折叠
+            node.data.expand = false;
         }
         
         // 递归处理子节点
@@ -1949,7 +1947,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
     /**
      * 展开思维导图到指定层级（在思维导图已创建后调用）
      * @param mindMap 思维导图实例
-     * @param level 展开层级（0表示只展开根节点，1表示展开1层，以此类推）
+     * @param level 展开层级（0表示全部展开，1表示展开1层，以此类推）
      */
     private expandToLevel(mindMap: any, level: number) {
         if (!mindMap || !mindMap.renderer || !mindMap.renderer.root) {
@@ -1958,6 +1956,13 @@ export default class SiYuanDocTreePlugin extends Plugin {
         }
         
         this.debugLog('开始应用展开层级:', level);
+        
+        // 如果level为0，表示全部展开
+        if (level === 0) {
+            this.debugLog('展开层级为0，全部展开');
+            mindMap.execCommand('EXPAND_ALL');
+            return;
+        }
         
         // 第一步：先折叠所有节点（确保初始状态一致）
         const collapseAll = (node: any) => {
@@ -2392,21 +2397,26 @@ export default class SiYuanDocTreePlugin extends Plugin {
         try {
             showMessage('正在保存到文档...', 2000, 'info');
             
-            // 1. 获取思维导图数据并转换为纯净的 Markdown（去除所有 HTML）
+            // 1. 获取思维导图数据
             const data = this.docMindMap.getData();
+            
+            // 2. 处理图片：将base64图片上传到assets文件夹
+            await this.processImagesInMindMap(data, docId);
+            
+            // 3. 转换为纯净的 Markdown（去除所有 HTML）
             const markdown = this.convertMindMapToCleanMarkdown(data);
             
-            // 2. 获取文档的所有直接子块
+            // 4. 获取文档的所有直接子块
             const childBlocks = await api.getChildBlocks(docId);
             
-            // 3. 删除所有子块
+            // 5. 删除所有子块
             if (childBlocks && childBlocks.length > 0) {
                 for (const block of childBlocks) {
                     await api.deleteBlock(block.id);
                 }
             }
             
-            // 4. 添加新的 Markdown 内容到文档
+            // 6. 添加新的 Markdown 内容到文档
             // 需要移除第一行的 H1 标题（因为文档本身就是标题）
             this.debugLog('=== 调试保存过程 ===');
             this.debugLog('原始 Markdown:');
@@ -2479,6 +2489,121 @@ export default class SiYuanDocTreePlugin extends Plugin {
         } catch (error) {
             this.debugError('保存失败:', error);
             showMessage(`保存失败: ${error.message}`, 3000, 'error');
+        }
+    }
+
+    /**
+     * 处理思维导图中的图片：将base64图片上传到思源assets文件夹
+     * @param data 思维导图数据
+     * @param docId 文档ID
+     */
+    async processImagesInMindMap(data: any, docId: string) {
+        if (!data) return;
+        
+        let imageCounter = 0; // 用于确保文件名唯一性
+        let processedCount = 0; // 已处理的图片数量
+        
+        // 递归处理所有节点
+        const processNode = async (node: any) => {
+            if (!node) return;
+            
+            const nodeData = node.data || {};
+            
+            // 检查是否有图片
+            if (nodeData.image && typeof nodeData.image === 'string') {
+                const imagePath = nodeData.image;
+                
+                // 如果是base64格式，需要上传
+                if (imagePath.startsWith('data:image/')) {
+                    try {
+                        processedCount++;
+                        this.debugLog(`发现base64图片 [${processedCount}]，准备上传到assets`);
+                        showMessage(`正在上传图片 ${processedCount}...`, 1000, 'info');
+                        
+                        // 解析base64数据
+                        const matches = imagePath.match(/^data:image\/(\w+);base64,(.+)$/);
+                        if (!matches) {
+                            this.debugWarn('无法解析base64图片格式');
+                            return;
+                        }
+                        
+                        const imageType = matches[1]; // jpg, png, gif等
+                        const base64Data = matches[2];
+                        
+                        // 将base64转换为Blob
+                        const byteCharacters = atob(base64Data);
+                        const byteNumbers = new Array(byteCharacters.length);
+                        for (let i = 0; i < byteCharacters.length; i++) {
+                            byteNumbers[i] = byteCharacters.charCodeAt(i);
+                        }
+                        const byteArray = new Uint8Array(byteNumbers);
+                        const blob = new Blob([byteArray], { type: `image/${imageType}` });
+                        
+                        // 生成唯一的文件名（时间戳 + 计数器）
+                        const timestamp = Date.now();
+                        const fileName = `mindmap_${timestamp}_${imageCounter++}.${imageType}`;
+                        const file = new File([blob], fileName, { type: `image/${imageType}` });
+                        
+                        // 构建assets目录路径
+                        // 根据API文档，assetsDirPath 是相对于 data 文件夹的路径
+                        // "assets" 会上传到 workspace/data/assets/
+                        // 参考：https://docs.siyuan-note.club/zh-Hans/reference/community/siyuan-sdk/kernel/api/asset.html
+                        const assetsDirPath = 'assets';
+                        
+                        this.debugLog('上传图片到 data/assets/ 文件夹，文件名:', fileName);
+                        
+                        // 上传到assets文件夹
+                        const uploadResult = await api.upload(assetsDirPath, [file]);
+                        
+                        this.debugLog('上传结果:', uploadResult);
+                        
+                        if (uploadResult && uploadResult.succMap && uploadResult.succMap[fileName]) {
+                            // 获取上传后的路径（API返回的是完整路径）
+                            const uploadedPath = uploadResult.succMap[fileName];
+                            this.debugLog('图片上传成功，API返回路径:', uploadedPath);
+                            
+                            // 使用API返回的路径
+                            // 通常格式是：assets/xxx.png（相对于notebook）
+                            nodeData.image = uploadedPath;
+                            this.debugLog('图片路径已更新为:', nodeData.image);
+                            showMessage(`图片 ${processedCount} 上传成功`, 1000, 'info');
+                        } else {
+                            this.debugWarn('图片上传失败，uploadResult:', uploadResult);
+                            showMessage(`图片 ${processedCount} 上传失败`, 3000, 'error');
+                        }
+                        
+                    } catch (error) {
+                        this.debugError('处理base64图片失败:', error);
+                        showMessage(`处理图片 ${processedCount} 失败: ${error.message}`, 3000, 'error');
+                    }
+                } 
+                // 如果已经是assets/xxx格式，不做处理（避免资源冗余）
+                else if (imagePath.startsWith('assets/') || imagePath.includes('/assets/')) {
+                    this.debugLog('图片已经在assets文件夹，跳过处理避免冗余:', imagePath);
+                }
+                // 如果是其他格式（如http链接），也不做处理
+                else if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+                    this.debugLog('图片是外部链接，跳过处理:', imagePath);
+                }
+                // 其他未知格式
+                else {
+                    this.debugLog('未知图片格式，跳过处理:', imagePath);
+                }
+            }
+            
+            // 递归处理子节点
+            if (node.children && Array.isArray(node.children)) {
+                for (const child of node.children) {
+                    await processNode(child);
+                }
+            }
+        };
+        
+        await processNode(data);
+        
+        if (processedCount > 0) {
+            this.debugLog(`图片处理完成，共处理 ${processedCount} 张图片`);
+            showMessage(`共处理 ${processedCount} 张图片`, 2000, 'info');
         }
     }
 
@@ -3400,123 +3525,268 @@ export default class SiYuanDocTreePlugin extends Plugin {
     }
 
     /**
-     * 从块元素中提取信息并加载思维导图
-     * 这是一个通用的加载函数，被多个场景调用
-     * @param blockElement 块元素
-     * @param forceReload 是否强制重新加载（用于文档刷新后）
+     * ==================================================================================
+     * 【核心函数】从块元素中提取信息并加载思维导图
+     * ==================================================================================
+     * 
+     * 功能说明：
+     * 这是一个通用的加载函数，被多个场景调用，统一处理嵌入式思维导图的加载逻辑
+     * 
+     * 调用场景：
+     * - 场景1：插件初始化时批量加载已存在的思维导图块（initAllEmbeddedMindMaps）
+     * - 场景2：用户插入新的思维导图块时（observeDocumentChanges）
+     * - 场景3：文档刷新或切换后重新加载（reloadVisibleMindMaps）
+     * 
+     * @param blockElement 思维导图块的 DOM 元素
+     * @param forceReload 是否强制重新加载（true 时会清除并重建，false 时跳过已加载的）
+     * 
+     * ==================================================================================
      */
     private loadMindMapFromElement(blockElement: Element, forceReload: boolean = false) {
+        // ============================================================
+        // 1. 数据验证阶段
+        // ============================================================
+        
+        // 1.1 提取块 ID
         const blockId = blockElement.getAttribute('data-node-id');
-        if (!blockId) return;
+        if (!blockId) return; // 无效块，直接返回
         
-        // 如果已经初始化且不是强制重载，跳过
-        if (!forceReload && this.embeddedMindMaps.has(blockId)) return;
+        // 1.2 检查是否需要跳过加载（非强制重载模式下）
+        if (!forceReload) {
+            // 1.2.1 如果内存中已有实例，跳过
+            if (this.embeddedMindMaps.has(blockId)) return;
+            
+            // 1.2.2 如果 DOM 中已有渲染容器，跳过
+            if (blockElement.querySelector('.mindmap-embed-wrapper')) return;
+        }
         
-        // 检查是否已经有 mindmap-embed-wrapper（表示已经渲染过）
-        // 强制重载时会清除旧的 wrapper
-        if (!forceReload && blockElement.querySelector('.mindmap-embed-wrapper')) return;
+        // ============================================================
+        // 2. 数据提取阶段
+        // ============================================================
         
-        // 从自定义属性获取数据
+        // 2.1 从自定义属性提取思维导图关联的文档信息
         const docId = blockElement.getAttribute('custom-doc-id');
         const encodedTitle = blockElement.getAttribute('custom-doc-title');
         
-        if (docId && encodedTitle) {
-            const docTitle = decodeURIComponent(encodedTitle);
-            this.debugLog('发现嵌入思维导图块:', { blockId, docId, docTitle, forceReload });
-            
-            // 如果是强制重载，先清理旧实例
-            if (forceReload && this.embeddedMindMaps.has(blockId)) {
-                const oldMindMap = this.embeddedMindMaps.get(blockId);
-                if (oldMindMap && typeof oldMindMap.destroy === 'function') {
-                    oldMindMap.destroy();
-                }
-                this.embeddedMindMaps.delete(blockId);
-                
-                // 清除旧的 wrapper
-                const oldWrapper = blockElement.querySelector('.mindmap-embed-wrapper');
-                if (oldWrapper) {
-                    oldWrapper.remove();
-                }
-                this.debugLog('强制重载，已清理旧实例:', blockId);
+        // 2.2 验证必需数据是否完整
+        if (!docId || !encodedTitle) return;
+        
+        // 2.3 解码文档标题
+        const docTitle = decodeURIComponent(encodedTitle);
+        this.debugLog('发现嵌入思维导图块:', { blockId, docId, docTitle, forceReload });
+        
+        // ============================================================
+        // 3. 强制重载时的清理阶段
+        // ============================================================
+        
+        if (forceReload && this.embeddedMindMaps.has(blockId)) {
+            // 3.1 销毁旧的思维导图实例
+            const oldMindMap = this.embeddedMindMaps.get(blockId);
+            if (oldMindMap && typeof oldMindMap.destroy === 'function') {
+                oldMindMap.destroy(); // 调用 simple-mind-map 的销毁方法
             }
             
-            this.initEmbeddedMindMap(blockId, docId, docTitle);
+            // 3.2 从内存映射中删除实例引用
+            this.embeddedMindMaps.delete(blockId);
+            
+            // 3.3 清除 DOM 中的旧渲染容器
+            const oldWrapper = blockElement.querySelector('.mindmap-embed-wrapper');
+            if (oldWrapper) {
+                oldWrapper.remove();
+            }
+            
+            this.debugLog('强制重载，已清理旧实例:', blockId);
         }
+        
+        // ============================================================
+        // 4. 初始化加载阶段
+        // ============================================================
+        
+        // 4.1 调用核心初始化函数，创建新的思维导图实例
+        this.initEmbeddedMindMap(blockId, docId, docTitle);
     }
 
     /**
-     * 初始化所有已存在的嵌入式思维导图
+     * ==================================================================================
+     * 【场景1】初始化所有已存在的嵌入式思维导图
+     * ==================================================================================
+     * 
+     * 功能说明：
+     * 在插件加载完成后（onLayoutReady），批量检测并初始化页面中已存在的思维导图块
+     * 
+     * 调用时机：
+     * - 插件启动后延迟 2000ms 执行（确保思源完全加载）
+     * 
+     * 特点：
+     * - 批量处理，提高效率
+     * - 使用非强制加载模式（forceReload = false）
+     * - 自动跳过已初始化的块
+     * 
+     * ==================================================================================
      */
     initAllEmbeddedMindMaps() {
-        // 查找所有带有自定义属性的块
+        // ============================================================
+        // 1. DOM 查询阶段
+        // ============================================================
+        
+        // 1.1 查找所有带有 custom-mindmap-id 属性的块
+        // 这个属性是思维导图块的唯一标识
         const blocks = document.querySelectorAll('[custom-mindmap-id]');
+        
+        // 1.2 输出检测结果
         this.debugLog('批量检测：找到', blocks.length, '个嵌入思维导图块');
         
+        // ============================================================
+        // 2. 批量初始化阶段
+        // ============================================================
+        
+        // 2.1 遍历所有找到的思维导图块
         blocks.forEach((blockElement) => {
+            // 2.1.1 调用通用加载函数
+            // 参数说明：
+            //   - blockElement: 当前块元素
+            //   - false: 非强制重载，会跳过已加载的块
             this.loadMindMapFromElement(blockElement, false);
         });
     }
 
     /**
-     * 检测并重新加载当前可见文档中的思维导图块
-     * 用于文档切换或刷新后重新加载
+     * ==================================================================================
+     * 【场景3】检测并重新加载当前可见文档中的思维导图块
+     * ==================================================================================
+     * 
+     * 功能说明：
+     * 当文档切换或刷新后，检测页面中未正确渲染的思维导图块并强制重新加载
+     * 
+     * 调用时机：
+     * - 思源刷新按钮点击后（loaded-protyle-static 事件）
+     * - 文档动态加载完成后（loaded-protyle-dynamic 事件）
+     * - DOM 大范围变化时（MutationObserver 兜底）
+     * 
+     * 核心逻辑：
+     * - 检测 DOM 中是否存在渲染容器（.mindmap-embed-wrapper）
+     * - 如果容器不存在，说明需要重新加载
+     * - 使用强制重载模式，确保清理旧实例
+     * 
+     * ==================================================================================
      */
     private reloadVisibleMindMaps() {
+        // ============================================================
+        // 1. 初始化检测阶段
+        // ============================================================
+        
         this.debugLog('重新检测当前文档中的思维导图块...');
         
-        // 查找所有带有自定义属性的块
+        // 1.1 查找所有思维导图块
         const blocks = document.querySelectorAll('[custom-mindmap-id]');
         this.debugLog('当前文档：找到', blocks.length, '个嵌入思维导图块');
         
+        // 1.2 如果没有找到任何块，直接返回
         if (blocks.length === 0) return;
         
-        let reloadCount = 0;
+        // ============================================================
+        // 2. 遍历检测与重载阶段
+        // ============================================================
+        
+        let reloadCount = 0; // 统计需要重载的块数量
+        
         blocks.forEach((blockElement) => {
+            // 2.1 提取块 ID
             const blockId = blockElement.getAttribute('data-node-id');
-            if (!blockId) return;
+            if (!blockId) return; // 无效块，跳过
             
-            // 检查是否已经有 wrapper（表示已渲染）
+            // 2.2 检查是否已经渲染
+            // 通过查找 .mindmap-embed-wrapper 容器判断
             const hasWrapper = blockElement.querySelector('.mindmap-embed-wrapper');
             
-            // 如果在内存中有记录但没有 wrapper，说明需要重新加载
-            // 或者如果没有 wrapper 也没有记录，也需要加载
+            // 2.3 决策是否需要重新加载
+            // 判断条件：
+            //   - 没有 wrapper：说明未渲染或渲染失败
+            //   - 需要强制重载：清除旧实例并重新创建
             if (!hasWrapper) {
+                // 2.3.1 调用通用加载函数，使用强制重载模式
+                // 参数说明：
+                //   - blockElement: 当前块元素
+                //   - true: 强制重载，会清理旧实例
                 this.loadMindMapFromElement(blockElement, true);
                 reloadCount++;
             }
         });
         
+        // ============================================================
+        // 3. 结果反馈阶段
+        // ============================================================
+        
+        // 3.1 输出重载统计信息
         if (reloadCount > 0) {
             this.debugLog(`已触发 ${reloadCount} 个思维导图块的重新加载`);
         }
     }
 
     /**
-     * 监听文档变化，自动初始化新插入的思维导图块
+     * ==================================================================================
+     * 【场景2】监听文档变化，自动初始化新插入的思维导图块
+     * ==================================================================================
+     * 
+     * 功能说明：
+     * 使用 MutationObserver 实时监听 DOM 变化，当用户插入新的思维导图块时自动初始化
+     * 
+     * 监听内容：
+     * - 属性变化：custom-mindmap-id 属性的添加或修改
+     * - 节点添加：新的带有 custom-mindmap-id 的元素被插入 DOM
+     * 
+     * 调用时机：
+     * - 插件启动时（onLayoutReady）创建监听器
+     * - 持续运行，直到插件卸载
+     * 
+     * 特点：
+     * - 实时响应，延迟 1000ms 执行（确保 DOM 稳定）
+     * - 递归检测子元素
+     * - 使用非强制加载模式
+     * 
+     * ==================================================================================
      */
     observeDocumentChanges() {
-        // 如果已经存在监听器，先断开
+        // ============================================================
+        // 1. 初始化监听器
+        // ============================================================
+        
+        // 1.1 清理旧的监听器（如果存在）
         if (this.documentObserver) {
             this.documentObserver.disconnect();
         }
 
+        // 1.2 创建新的 MutationObserver 实例
         this.documentObserver = new MutationObserver((mutations) => {
+            // ============================================================
+            // 2. 处理 DOM 变化
+            // ============================================================
+            
             mutations.forEach((mutation) => {
-                // 监听属性变化
+                // --------------------------------------------------------
+                // 2.1 监听属性变化
+                // --------------------------------------------------------
+                // 场景：用户通过编辑器修改块属性，添加 custom-mindmap-id
                 if (mutation.type === 'attributes' && mutation.attributeName === 'custom-mindmap-id') {
                     const element = mutation.target as HTMLElement;
                     this.debugLog('检测到属性变化的思维导图块');
+                    
+                    // 2.1.1 延迟执行，确保属性已完全更新
                     setTimeout(() => {
                         this.loadMindMapFromElement(element, false);
                     }, 1000);
                 }
                 
-                // 监听新增节点
+                // --------------------------------------------------------
+                // 2.2 监听新增节点
+                // --------------------------------------------------------
+                // 场景：用户插入新的思维导图块，或者粘贴包含思维导图块的内容
                 mutation.addedNodes.forEach((node) => {
+                    // 2.2.1 验证节点类型（只处理元素节点）
                     if (node.nodeType === Node.ELEMENT_NODE) {
                         const element = node as Element;
                         
-                        // 检查元素本身
+                        // 2.2.2 检查元素本身是否是思维导图块
                         if (element.hasAttribute?.('custom-mindmap-id')) {
                             this.debugLog('检测到新增的思维导图块（元素本身）');
                             setTimeout(() => {
@@ -3524,7 +3794,8 @@ export default class SiYuanDocTreePlugin extends Plugin {
                             }, 1000);
                         }
                         
-                        // 检查子元素
+                        // 2.2.3 检查子元素中是否包含思维导图块
+                        // 场景：粘贴包含多个块的内容
                         const blocks = element.querySelectorAll?.('[custom-mindmap-id]');
                         blocks?.forEach((block) => {
                             this.debugLog('检测到新增的思维导图块（子元素）');
@@ -3537,60 +3808,124 @@ export default class SiYuanDocTreePlugin extends Plugin {
             });
         });
 
+        // ============================================================
+        // 3. 启动监听
+        // ============================================================
+        
+        // 3.1 配置监听选项并开始监听
         this.documentObserver.observe(document.body, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['custom-mindmap-id']
+            childList: true,              // 监听子节点的添加和删除
+            subtree: true,                 // 监听所有后代节点
+            attributes: true,              // 监听属性变化
+            attributeFilter: ['custom-mindmap-id']  // 只监听特定属性
         });
     }
 
     /**
-     * 监听文档切换和刷新事件
-     * 用于处理文档切换或刷新后重新加载思维导图块
+     * ==================================================================================
+     * 【监听机制】监听文档切换和刷新事件
+     * ==================================================================================
+     * 
+     * 功能说明：
+     * 监听思源笔记的文档刷新和切换事件，确保嵌入式思维导图在这些场景下能够正确重新加载
+     * 
+     * 监听策略：
+     * - 策略1：监听思源官方 EventBus 事件（主要检测方式）
+     * - 策略2：使用 MutationObserver 监听 DOM 变化（兜底方案）
+     * 
+     * 解决的问题：
+     * - 问题1：点击思源刷新按钮后，嵌入思维导图不显示
+     * - 问题2：切换文档后，新文档中的思维导图不加载
+     * - 问题3：浏览器刷新后，思维导图需要手动重新加载
+     * 
+     * 调用时机：
+     * - 插件启动时（onLayoutReady）创建监听器
+     * 
+     * ==================================================================================
      */
     observeDocumentSwitch() {
         this.debugLog('开始监听文档切换和刷新事件...');
         
+        // ============================================================
+        // 1. 初始化节流机制
+        // ============================================================
+        
         let reloadTimer: number | null = null;
         
-        // 节流触发重载的通用函数
+        /**
+         * 节流触发重载的通用函数
+         * 
+         * 目的：
+         * - 避免短时间内多个事件同时触发导致重复加载
+         * - 合并多个连续触发为一次执行
+         * 
+         * 节流时间：500ms
+         * 
+         * @param reason 触发原因（用于调试日志）
+         */
         const triggerReload = (reason: string) => {
             this.debugLog(`触发重载: ${reason}`);
             
-            // 使用节流，避免短时间内多次触发
+            // 1.1 清除之前的定时器（实现节流）
             if (reloadTimer) {
                 clearTimeout(reloadTimer);
             }
             
+            // 1.2 设置新的定时器
             reloadTimer = window.setTimeout(() => {
-                this.reloadVisibleMindMaps();
-                reloadTimer = null;
+                this.reloadVisibleMindMaps();  // 执行重新加载
+                reloadTimer = null;             // 清空定时器引用
             }, 500);
         };
         
-        // 1. 监听 loaded-protyle-static 事件（文档静态加载完成，包括刷新按钮）
+        // ============================================================
+        // 2. 监听思源官方 EventBus 事件（主要检测方式）
+        // ============================================================
+        
+        // --------------------------------------------------------
+        // 2.1 监听 loaded-protyle-static 事件
+        // --------------------------------------------------------
+        // 触发场景：
+        //   - 用户点击思源的刷新按钮
+        //   - 打开新文档
+        //   - 文档静态加载完成
+        // 优先级：⭐⭐⭐⭐⭐（最重要）
         this.eventBus.on('loaded-protyle-static', (event) => {
             this.debugLog('检测到 loaded-protyle-static 事件（文档刷新）', event.detail);
             triggerReload('loaded-protyle-static');
         });
         
-        // 2. 监听 loaded-protyle-dynamic 事件（文档动态加载）
+        // --------------------------------------------------------
+        // 2.2 监听 loaded-protyle-dynamic 事件
+        // --------------------------------------------------------
+        // 触发场景：
+        //   - 文档动态加载内容
+        //   - 滚动加载更多内容
+        // 优先级：⭐⭐⭐⭐
         this.eventBus.on('loaded-protyle-dynamic', (event) => {
             this.debugLog('检测到 loaded-protyle-dynamic 事件（文档动态加载）', event.detail);
             triggerReload('loaded-protyle-dynamic');
         });
         
-        // 3. 作为兜底，使用 MutationObserver 检测 DOM 大范围变化
+        // ============================================================
+        // 3. MutationObserver 兜底机制（备用检测方式）
+        // ============================================================
+        
+        // 3.1 创建 MutationObserver 实例
+        // 目的：捕获 EventBus 可能遗漏的场景
         const protyleObserver = new MutationObserver((mutations) => {
             let hasSignificantChange = false;
             
+            // 3.2 检测是否有显著的 DOM 变化
             for (const mutation of mutations) {
                 if (mutation.addedNodes.length > 0) {
                     mutation.addedNodes.forEach((node) => {
                         if (node.nodeType === Node.ELEMENT_NODE) {
                             const element = node as Element;
-                            // 检查是否是 protyle 内容容器
+                            
+                            // 3.2.1 检查是否是 protyle 内容容器
+                            // protyle-content 是思源编辑器的主要内容容器
+                            // 当这个容器被添加时，说明文档正在切换或刷新
                             if (element.classList?.contains('protyle-content') || 
                                 element.querySelector?.('.protyle-content')) {
                                 hasSignificantChange = true;
@@ -3600,17 +3935,22 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 }
             }
             
+            // 3.3 如果检测到显著变化，触发重载
             if (hasSignificantChange) {
                 this.debugLog('检测到 protyle-content 容器变化（MutationObserver 兜底）');
                 triggerReload('MutationObserver');
             }
         });
         
-        // 监听整个文档，但只关注子节点的添加
+        // 3.4 启动 MutationObserver 监听
         protyleObserver.observe(document.body, {
-            childList: true,
-            subtree: true
+            childList: true,   // 监听子节点的添加和删除
+            subtree: true      // 监听所有后代节点
         });
+        
+        // ============================================================
+        // 4. 完成初始化
+        // ============================================================
         
         this.debugLog('文档切换和刷新监听已启动（EventBus + MutationObserver 双重保障）');
     }
@@ -3907,12 +4247,12 @@ export default class SiYuanDocTreePlugin extends Plugin {
                     <div style="margin-bottom: 16px;">
                         <label style="display: block; margin-bottom: 8px;">选择导出格式：</label>
                         <select id="exportFormat" class="b3-select" style="width: 100%;">
-                            <option value="json">JSON - 思维导图数据</option>
-                            <option value="png">PNG - 图片格式</option>
-                            <option value="svg">SVG - 矢量图格式</option>
-                            <option value="pdf">PDF - 文档格式</option>
                             <option value="markdown">Markdown - 文本格式</option>
                             <option value="xmind">XMind - XMind格式</option>
+                            <option value="pdf">PDF - 文档格式</option>
+                            <option value="png">PNG - 图片格式</option>
+                            <option value="svg">SVG - 矢量图格式</option>
+                            <option value="json">JSON - simple-mind-map思维导图数据</option>
                             <option value="txt">TXT - 纯文本格式</option>
                         </select>
                     </div>
@@ -3984,6 +4324,12 @@ export default class SiYuanDocTreePlugin extends Plugin {
                     dialog.destroy();
                     await this.exportMindMap(format, fileName, type, { removeStyle, imageSaveMode });
                 });
+            }
+            
+            // 取消按钮
+            const cancelBtn = dialog.element.querySelector('.b3-button--cancel');
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', () => dialog.destroy());
             }
         }, 100);
     }
@@ -4299,9 +4645,8 @@ export default class SiYuanDocTreePlugin extends Plugin {
                     <div style="margin-bottom: 16px;">
                         <label style="display: block; margin-bottom: 8px;">选择导入格式：</label>
                         <select id="importFormat" class="b3-select" style="width: 100%; margin-bottom: 12px;">
-                            <option value="json">JSON - 思维导图数据</option>
-                            <option value="xmind">XMind - XMind格式</option>
-                            <option value="markdown">Markdown - 文本格式</option>
+                            <option value="xmind">XMind - XMind格式（可导入图片）</option>
+                            <option value="json">JSON - simple-mind-map思维导图数据（不能解析图片）</option>
                         </select>
                     </div>
                     <div style="margin-bottom: 16px;">
@@ -4310,6 +4655,9 @@ export default class SiYuanDocTreePlugin extends Plugin {
                     </div>
                     <div style="padding: 12px; background: var(--b3-card-warning-background); border-radius: 4px; font-size: 12px;">
                         ⚠️ 导入将替换当前思维导图内容，建议先导出备份
+                    </div>
+                    <div style="padding: 12px; background: var(--b3-card-info-background); border-radius: 4px; font-size: 12px; margin-top: 8px;">
+                        💡 导入Markdown文件，请使用思源笔记官方的导入Markdown功能
                     </div>
                 </div>
                 <div class="b3-dialog__action">
@@ -4321,11 +4669,38 @@ export default class SiYuanDocTreePlugin extends Plugin {
         });
 
         setTimeout(() => {
+            const formatSelect = document.getElementById('importFormat') as HTMLSelectElement;
+            const fileInput = document.getElementById('importFile') as HTMLInputElement;
             const confirmBtn = document.getElementById('confirmImport');
+            
+                // 根据选择的格式更新文件选择器的accept属性
+                const updateFileAccept = () => {
+                    const format = formatSelect?.value;
+                    if (!fileInput) return;
+                    
+                    switch (format) {
+                        case 'xmind':
+                            fileInput.accept = '.xmind';
+                            break;
+                        case 'json':
+                            fileInput.accept = '.json';
+                            break;
+                        default:
+                            fileInput.accept = '';
+                    }
+                };
+            
+            // 初始化文件类型
+            updateFileAccept();
+            
+            // 监听格式选择变化
+            if (formatSelect) {
+                formatSelect.addEventListener('change', updateFileAccept);
+            }
+            
             if (confirmBtn) {
                 confirmBtn.addEventListener('click', async () => {
-                    const format = (document.getElementById('importFormat') as HTMLSelectElement)?.value;
-                    const fileInput = document.getElementById('importFile') as HTMLInputElement;
+                    const format = formatSelect?.value;
                     const file = fileInput?.files?.[0];
                     
                     if (!file) {
@@ -4336,6 +4711,12 @@ export default class SiYuanDocTreePlugin extends Plugin {
                     dialog.destroy();
                     await this.importMindMap(format, file);
                 });
+            }
+            
+            // 取消按钮
+            const cancelBtn = dialog.element.querySelector('.b3-button--cancel');
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', () => dialog.destroy());
             }
         }, 100);
     }
@@ -4348,14 +4729,11 @@ export default class SiYuanDocTreePlugin extends Plugin {
             showMessage(`正在导入 ${format.toUpperCase()} 格式...`, 2000, 'info');
             
             switch (format) {
-                case 'json':
-                    await this.importJSON(file);
-                    break;
                 case 'xmind':
                     await this.importXMind(file);
                     break;
-                case 'markdown':
-                    await this.importMarkdown(file);
+                case 'json':
+                    await this.importJSON(file);
                     break;
                 default:
                     showMessage('不支持的导入格式', 3000, 'error');
@@ -4381,21 +4759,19 @@ export default class SiYuanDocTreePlugin extends Plugin {
      * 导入 XMind
      */
     async importXMind(file: File) {
-        // XMind 导入需要额外的处理，目前简化实现
-        showMessage('XMind 导入功能开发中，请使用 JSON 或 Markdown 格式', 3000, 'info');
-        // TODO: 实现 XMind 导入功能
-        // 可以考虑使用 simple-mind-map 的相关功能或第三方库
+        try {
+            // 使用 simple-mind-map 的 xmind 解析方法
+            const data = await xmind.parseXmindFile(file);
+            
+            // 将解析后的数据设置到思维导图中
+            this.docMindMap.setData(data);
+            this.docMindMap.render();
+            
+            showMessage('XMind 导入成功', 2000, 'info');
+        } catch (error) {
+            this.debugError('XMind 导入失败:', error);
+            showMessage(`XMind 导入失败: ${error.message}`, 3000, 'error');
+        }
     }
 
-    /**
-     * 导入 Markdown
-     */
-    async importMarkdown(file: File) {
-        const text = await file.text();
-        const title = file.name.replace(/\.md$/i, '');
-        const data = parseMarkdownToMindMap(text, title);
-        this.docMindMap.setData(data);
-        this.docMindMap.render();
-        showMessage('Markdown 导入成功', 2000, 'info');
-    }
 }
