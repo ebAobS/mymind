@@ -137,7 +137,43 @@ function extractBlockContent(kramdown: string, blockSubType?: BlockSubType): { t
     return { text: text || "空白块", image };
 }
 
-async function buildMindMapNodeFromBlock(block: IResGetChildBlock): Promise<MindMapNode> {
+async function expandListContainer(block: IResGetChildBlock, visited: Set<string>): Promise<MindMapNode[]> {
+    const results: MindMapNode[] = [];
+    if (!block || !block.id) return results;
+    if (visited.has(block.id)) return results;
+    visited.add(block.id);
+
+    const listChildren = await api.getChildBlocks(block.id);
+    if (!listChildren || listChildren.length === 0) return results;
+
+    const seenIds = new Set<string>();
+    for (const child of listChildren) {
+        if (!child || !child.id || seenIds.has(child.id)) continue;
+        seenIds.add(child.id);
+
+        if (child.type === "l") {
+            const nested = await expandListContainer(child, visited);
+            results.push(...nested);
+            continue;
+        }
+
+        const childNode = await buildMindMapNodeFromBlock(child, visited);
+        if (childNode) {
+            results.push(childNode);
+        }
+    }
+
+    return results;
+}
+
+async function buildMindMapNodeFromBlock(block: IResGetChildBlock, visited: Set<string>): Promise<MindMapNode | null> {
+    if (!block || !block.id) return null;
+
+    if (visited.has(block.id)) {
+        return null;
+    }
+    visited.add(block.id);
+
     const kramdown = await api.getBlockKramdown(block.id);
     const { text, image } = extractBlockContent(kramdown?.kramdown || "", block.subtype);
     const childrenBlocks = await api.getChildBlocks(block.id);
@@ -161,7 +197,31 @@ async function buildMindMapNodeFromBlock(block: IResGetChildBlock): Promise<Mind
     }
 
     if (childrenBlocks && childrenBlocks.length > 0) {
-        node.children = await Promise.all(childrenBlocks.map((child) => buildMindMapNodeFromBlock(child)));
+        const isListItem = block.type === "i";
+        const childNodes: MindMapNode[] = [];
+        const seenChildIds = new Set<string>();
+        for (const child of childrenBlocks) {
+            if (!child || !child.id || child.id === block.id) continue;
+            if (seenChildIds.has(child.id)) continue;
+            seenChildIds.add(child.id);
+
+            // 列表项内部的文本段（p）会重复父节点内容，跳过
+            if (isListItem && child.type === "p") {
+                continue;
+            }
+
+            if (child.type === "l") {
+                const listChildren = await expandListContainer(child, visited);
+                childNodes.push(...listChildren);
+                continue;
+            }
+
+            const childNode = await buildMindMapNodeFromBlock(child, visited);
+            if (childNode) {
+                childNodes.push(childNode);
+            }
+        }
+        node.children = childNodes;
     }
 
     return node;
@@ -170,6 +230,8 @@ async function buildMindMapNodeFromBlock(block: IResGetChildBlock): Promise<Mind
 export async function parseDocumentBlocksToMindMap(docId: string, docTitle: string): Promise<MindMapNode> {
     try {
         const rootChildren = await api.getChildBlocks(docId);
+        const visited = new Set<string>();
+        visited.add(docId);
 
         const rootNode: MindMapNode = {
             data: {
@@ -184,7 +246,27 @@ export async function parseDocumentBlocksToMindMap(docId: string, docTitle: stri
         };
 
         if (rootChildren && rootChildren.length > 0) {
-            rootNode.children = await Promise.all(rootChildren.map((block) => buildMindMapNodeFromBlock(block)));
+            const childNodes: MindMapNode[] = [];
+            const seenRootIds = new Set<string>();
+            for (const block of rootChildren) {
+                if (!block || !block.id || visited.has(block.id)) {
+                    continue;
+                }
+                if (seenRootIds.has(block.id)) continue;
+                seenRootIds.add(block.id);
+
+                if (block.type === "l") {
+                    const listChildren = await expandListContainer(block, visited);
+                    childNodes.push(...listChildren);
+                    continue;
+                }
+
+                const childNode = await buildMindMapNodeFromBlock(block, visited);
+                if (childNode) {
+                    childNodes.push(childNode);
+                }
+            }
+            rootNode.children = childNodes;
         }
 
         await updateImageSizes(rootNode);
