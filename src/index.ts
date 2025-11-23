@@ -77,6 +77,9 @@ interface MindMapNode {
         text: string;
         uid?: string;  // simple-mind-map 使用 uid 作为节点唯一标识
         id?: string;
+        blockId?: string;
+        blockType?: string;
+        blockSubType?: string;
         notebookId?: string;
         hpath?: string;
         path?: string;  // 文件系统路径
@@ -87,12 +90,25 @@ interface MindMapNode {
     };
     children?: MindMapNode[];
 }
+interface DocMindMapNodeInfo {
+    uid: string;
+    blockId?: string;
+    text: string;
+    parentUid?: string | null;
+    previousUid?: string | null;
+    blockType?: string;
+    blockSubType?: string;
+    image?: string;
+}
+
+
 
 export default class SiYuanDocTreePlugin extends Plugin {
 
     private settingUtils: SettingUtils;
     private mindMap: any = null;
     private docMindMap: any = null; // 文档思维导图实例
+    private docMindMapNodeIndex: Map<string, DocMindMapNodeInfo> = new Map(); // ??????????????
     private lastNodeMap: Map<string, any> = new Map(); // 用于跟踪节点变化
     private embeddedMindMaps: Map<string, any> = new Map(); // 嵌入的思维导图实例
     private isInitializing: boolean = false; // 标记是否正在初始化，防止初始渲染时触发重命名
@@ -2122,6 +2138,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                         this.docMindMap.destroy();
                         this.docMindMap = null;
                     }
+                    this.docMindMapNodeIndex = new Map();
                 }
             });
 
@@ -2199,8 +2216,9 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 // 绑定工具栏事件
                 this.bindDocMindMapToolbarEvents(docId, originalData);
                 
-                // 绑定编辑事件监听
-                this.bindDocMindMapEditEvents();
+                // 初始化节点映射并绑定编辑事件
+                this.docMindMapNodeIndex = this.buildDocMindMapIndex(this.docMindMap.getData());
+                this.bindDocMindMapEditEvents(docId);
             }, 100);
 
         } catch (error) {
@@ -2212,6 +2230,178 @@ export default class SiYuanDocTreePlugin extends Plugin {
     /**
      * 绑定文档思维导图工具栏事件
      */
+    private buildDocMindMapIndex(data: any): Map<string, DocMindMapNodeInfo> {
+        const map = new Map<string, DocMindMapNodeInfo>();
+
+        const traverse = (node: any, parentUid: string | null, previousUid: string | null) => {
+            if (!node || !node.data) return;
+            const uid = node.data.uid || node.data.id;
+            if (!uid) return;
+
+            const info: DocMindMapNodeInfo = {
+                uid,
+                blockId: node.data.blockId || node.data.id,
+                text: this.stripHtmlTags(node.data.text || ''),
+                parentUid,
+                previousUid,
+                blockType: node.data.blockType,
+                blockSubType: node.data.blockSubType,
+                image: node.data.image
+            };
+            map.set(uid, info);
+
+            if (node.children && node.children.length > 0) {
+                let prev: string | null = null;
+                for (const child of node.children) {
+                    traverse(child, uid, prev);
+                    const childUid = child?.data?.uid || child?.data?.id || null;
+                    prev = childUid || prev;
+                }
+            }
+        };
+
+        traverse(data, null, null);
+        return map;
+    }
+
+    private buildBlockMarkdownFromNode(nodeInfo: DocMindMapNodeInfo): string {
+        const text = nodeInfo.text?.trim() || '';
+        const imagePart = nodeInfo.image ? `${text ? '\n\n' : ''}![](${nodeInfo.image})` : '';
+        const combined = `${text}${imagePart}`.trim();
+
+        if (nodeInfo.blockSubType === 'image' && nodeInfo.image) {
+            return `![](${nodeInfo.image})`;
+        }
+
+        if (nodeInfo.blockType === 'h' && nodeInfo.blockSubType?.startsWith('h')) {
+            const level = parseInt(nodeInfo.blockSubType.slice(1), 10);
+            const safeLevel = isNaN(level) ? 1 : Math.min(6, Math.max(1, level));
+            return `${'#'.repeat(safeLevel)} ${combined}`.trim();
+        }
+
+        if (nodeInfo.blockType === 'i' || nodeInfo.blockType === 'l') {
+            return `- ${combined}`.trim();
+        }
+
+        if (nodeInfo.blockSubType === 'quote') {
+            return `> ${combined}`.trim();
+        }
+
+        if (nodeInfo.blockSubType === 'code') {
+            return `\`\`\`\n${combined}\n\`\`\``;
+        }
+
+        return combined || ' ';
+    }
+
+    private resolveBlockId(index: Map<string, DocMindMapNodeInfo>, uid: string | null | undefined, docId: string): string | undefined {
+        if (!uid) return docId;
+        if (uid === docId) return docId;
+        const target = index.get(uid);
+        return target?.blockId || docId;
+    }
+
+    private async createBlockForMindMapNode(info: DocMindMapNodeInfo, index: Map<string, DocMindMapNodeInfo>, docId: string): Promise<void> {
+        const parentBlockId = this.resolveBlockId(index, info.parentUid, docId);
+        const previousBlockId = info.previousUid ? index.get(info.previousUid)?.blockId : undefined;
+        const markdown = this.buildBlockMarkdownFromNode(info);
+
+        const ops = await api.insertBlock('markdown', markdown, undefined, previousBlockId, parentBlockId);
+        const newBlockId =
+            ops?.[0]?.doOperations?.[0]?.id ||
+            (ops?.[0]?.doOperations?.[0]?.data as string | undefined) ||
+            (ops?.[0]?.doOperations?.[0]?.retData as string | undefined);
+
+        if (newBlockId) {
+            info.blockId = newBlockId;
+            const node = this.docMindMap?.renderer?.findNodeByUid?.(info.uid);
+            if (node && node.nodeData && node.nodeData.data) {
+                node.nodeData.data.blockId = newBlockId;
+            }
+            const mapped = index.get(info.uid);
+            if (mapped) {
+                mapped.blockId = newBlockId;
+            }
+        }
+    }
+
+    private async moveBlockForMindMapNode(info: DocMindMapNodeInfo, index: Map<string, DocMindMapNodeInfo>, docId: string): Promise<void> {
+        if (!info.blockId) return;
+        const parentBlockId = this.resolveBlockId(index, info.parentUid, docId);
+        const previousBlockId = info.previousUid ? index.get(info.previousUid)?.blockId : undefined;
+        await api.moveBlock(info.blockId, previousBlockId, parentBlockId);
+    }
+
+    private async updateBlockForMindMapNode(info: DocMindMapNodeInfo): Promise<void> {
+        if (!info.blockId) return;
+        const markdown = this.buildBlockMarkdownFromNode(info);
+        await api.updateBlock('markdown', markdown, info.blockId);
+    }
+
+    private async syncDocMindMapChanges(data: any, docId: string, silent: boolean = true) {
+        if (!data) return;
+
+        await this.processImagesInMindMap(data, docId);
+
+        const newIndex = this.buildDocMindMapIndex(data);
+        if (this.docMindMapNodeIndex.size === 0) {
+            this.docMindMapNodeIndex = newIndex;
+            return;
+        }
+
+        const oldIndex = new Map(this.docMindMapNodeIndex);
+
+        const created: DocMindMapNodeInfo[] = [];
+        const deleted: DocMindMapNodeInfo[] = [];
+        const renamed: Array<{ oldInfo: DocMindMapNodeInfo; newInfo: DocMindMapNodeInfo }> = [];
+        const moved: Array<{ oldInfo: DocMindMapNodeInfo; newInfo: DocMindMapNodeInfo }> = [];
+
+        newIndex.forEach((info, uid) => {
+            if (!oldIndex.has(uid)) {
+                created.push(info);
+            } else {
+                const oldInfo = oldIndex.get(uid)!;
+                if (oldInfo.text !== info.text || oldInfo.image !== info.image) {
+                    renamed.push({ oldInfo, newInfo: info });
+                }
+                if (oldInfo.parentUid !== info.parentUid || oldInfo.previousUid !== info.previousUid) {
+                    moved.push({ oldInfo, newInfo: info });
+                }
+            }
+        });
+
+        oldIndex.forEach((info, uid) => {
+            if (!newIndex.has(uid) && uid !== docId) {
+                deleted.push(info);
+            }
+        });
+
+        if (!silent && (created.length || deleted.length || renamed.length || moved.length)) {
+            showMessage('???????????...', 1500, 'info');
+        }
+
+        for (const info of deleted) {
+            if (info.blockId && info.blockId !== docId) {
+                await api.deleteBlock(info.blockId);
+            }
+        }
+
+        for (const info of created) {
+            await this.createBlockForMindMapNode(info, newIndex, docId);
+        }
+
+        for (const move of moved) {
+            await this.moveBlockForMindMapNode(move.newInfo, newIndex, docId);
+        }
+
+        for (const rename of renamed) {
+            await this.updateBlockForMindMapNode(rename.newInfo);
+        }
+
+        this.docMindMapNodeIndex = newIndex;
+    }
+
+
     bindDocMindMapToolbarEvents(docId: string, originalData: any) {
         // 添加子节点
         const addChildBtn = document.getElementById('docAddChildBtn');
@@ -2270,7 +2460,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
         const saveBtn = document.getElementById('docSaveBtn');
         if (saveBtn) {
             saveBtn.addEventListener('click', async () => {
-                await this.showSaveWarningAndSave(docId);
+                await this.saveDocMindMapToDocument(docId);
             });
         }
 
@@ -2280,6 +2470,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             resetBtn.addEventListener('click', () => {
                 this.docMindMap.setData(JSON.parse(JSON.stringify(originalData)));
                 this.docMindMap.render();
+                this.docMindMapNodeIndex = this.buildDocMindMapIndex(this.docMindMap.getData());
                 showMessage('已重置为原始内容', 2000, 'info');
             });
         }
@@ -2312,192 +2503,54 @@ export default class SiYuanDocTreePlugin extends Plugin {
     /**
      * 绑定文档思维导图编辑事件
      */
-    bindDocMindMapEditEvents() {
+    bindDocMindMapEditEvents(docId: string) {
         if (!this.docMindMap) return;
 
-        // 监听节点拖拽完成事件
-        this.docMindMap.on('node_dragend', () => {
-            showMessage('节点层级已改变，记得点击保存按钮', 2000, 'info');
+        // ???????????????
+        this.docMindMap.on('data_change', async (data: any) => {
+            await this.syncDocMindMapChanges(data, docId, true);
+        });
+
+        // ???????????
+        this.docMindMap.on('node_dragend', async () => {
+            await this.syncDocMindMapChanges(this.docMindMap.getData(), docId, true);
         });
     }
+
 
     /**
      * 显示保存警告并保存
      */
     async showSaveWarningAndSave(docId: string) {
-        // 检查是否显示警告
-        const showWarning = this.settingUtils.get(showSaveWarningName);
-        
-        if (showWarning !== false) {
-            // 显示警告对话框
-            const dialog = new Dialog({
-                title: "⚠️ 保存警告",
-                content: `
-                    <div class="b3-dialog__content" style="padding: 20px;">
-                        <div style="margin-bottom: 16px; line-height: 1.6;">
-                            <strong style="color: var(--b3-theme-error);">警告：</strong>
-                            将思维导图同步保存至思源文档，将丢失非 Markdown 格式的块，如：
-                        </div>
-                        <ul style="margin-left: 20px; line-height: 1.8; color: var(--b3-theme-on-surface);">
-                            <li>代码块</li>
-                            <li>引用块</li>
-                            <li>表格</li>
-                            <li>其他特殊块类型</li>
-                        </ul>
-                        <div style="margin-top: 16px; line-height: 1.6;">
-                            <strong style="color: var(--b3-theme-primary);">保留内容：</strong>
-                        </div>
-                        <ul style="margin-left: 20px; line-height: 1.8; color: var(--b3-theme-on-surface);">
-                            <li>各级标题块（H1-H6）</li>
-                            <li>无序列表块（支持缩进）</li>
-                            <li>图片</li>
-                            <li>普通段落文本</li>
-                        </ul>
-                        <div style="margin-top: 20px; padding: 12px; background: var(--b3-theme-background-light); border-radius: 4px; border-left: 3px solid var(--b3-theme-primary);">
-                            <label style="display: flex; align-items: center; cursor: pointer;">
-                                <input type="checkbox" id="dontShowAgain" style="margin-right: 8px;">
-                                <span>不再提示此警告</span>
-                            </label>
-                        </div>
-                    </div>
-                    <div class="b3-dialog__action">
-                        <button class="b3-button b3-button--cancel">取消</button>
-                        <button id="confirmSave" class="b3-button b3-button--text">确认保存</button>
-                    </div>
-                `,
-                width: "500px",
-            });
-
-            setTimeout(() => {
-                const confirmBtn = document.getElementById('confirmSave');
-                const dontShowAgainCheckbox = document.getElementById('dontShowAgain') as HTMLInputElement;
-                
-                if (confirmBtn) {
-                    confirmBtn.addEventListener('click', async () => {
-                        // 如果勾选了"不再提示"，保存设置
-                        if (dontShowAgainCheckbox && dontShowAgainCheckbox.checked) {
-                            await this.settingUtils.set(showSaveWarningName, false);
-                        }
-                        
-                        dialog.destroy();
-                        await this.saveDocMindMapToDocument(docId);
-                    });
-                }
-            }, 100);
-        } else {
-            // 不显示警告，直接保存
-            await this.saveDocMindMapToDocument(docId);
-        }
+        await this.saveDocMindMapToDocument(docId);
     }
 
-    /**
-     * 将思维导图保存到文档
-     */
-    async saveDocMindMapToDocument(docId: string) {
+async saveDocMindMapToDocument(docId: string) {
         try {
-            showMessage('正在保存到文档...', 2000, 'info');
-            
-            // 1. 获取思维导图数据
-            const data = this.docMindMap.getData();
-            
-            // 2. 处理图片：将base64图片上传到assets文件夹
-            await this.processImagesInMindMap(data, docId);
-            
-            // 3. 转换为纯净的 Markdown（去除所有 HTML）
-            const markdown = this.convertMindMapToCleanMarkdown(data);
-            
-            // 4. 获取文档的所有直接子块
-            const childBlocks = await api.getChildBlocks(docId);
-            
-            // 5. 删除所有子块
-            if (childBlocks && childBlocks.length > 0) {
-                for (const block of childBlocks) {
-                    await api.deleteBlock(block.id);
-                }
+            showMessage('???????...', 2000, 'info');
+
+            if (!this.docMindMap) {
+                showMessage('???????????', 2000, 'error');
+                return;
             }
-            
-            // 6. 添加新的 Markdown 内容到文档
-            // 需要移除第一行的 H1 标题（因为文档本身就是标题）
-            this.debugLog('=== 调试保存过程 ===');
-            this.debugLog('原始 Markdown:');
-            this.debugLog(markdown);
-            this.debugLog('前 20 行:');
-            this.debugLog(markdown.split('\n').slice(0, 20).map((line, i) => `${i}: [${line}]`).join('\n'));
-            
-            const lines = markdown.split('\n');
-            let contentLines = lines;
-            
-            // 如果第一行是 H1 标题，则移除它
-            if (lines.length > 0 && lines[0].startsWith('# ')) {
-                this.debugLog('移除第一行 H1:', lines[0]);
-                contentLines = lines.slice(1);
-            }
-            
-            this.debugLog('移除 H1 后的前 10 行:');
-            this.debugLog(contentLines.slice(0, 10).map((line, i) => `${i}: [${line}]`).join('\n'));
-            
-            // 移除开头的所有空行
-            let removedCount = 0;
-            while (contentLines.length > 0 && contentLines[0].trim() === '') {
-                contentLines.shift();
-                removedCount++;
-            }
-            this.debugLog('移除了', removedCount, '个开头空行');
-            
-            // 如果第一行是标题且第二行是空行，移除第二行
-            // 这样可以避免文档开头出现空行
-            if (contentLines.length > 1 && 
-                contentLines[0].match(/^#{1,6}\s+/) && 
-                contentLines[1].trim() === '') {
-                this.debugLog('移除第一个标题后的空行');
-                contentLines.splice(1, 1);
-            }
-            
-            // 移除结尾的所有空行
-            let removedEndCount = 0;
-            while (contentLines.length > 0 && contentLines[contentLines.length - 1].trim() === '') {
-                contentLines.pop();
-                removedEndCount++;
-            }
-            this.debugLog('移除了', removedEndCount, '个结尾空行');
-            
-            let contentMarkdown = contentLines.join('\n');
-            
-            // 确保 Markdown 不以换行符开头
-            contentMarkdown = contentMarkdown.replace(/^\n+/, '');
-            
-            // 确保 Markdown 不以换行符结尾（彻底清理）
-            contentMarkdown = contentMarkdown.replace(/\n+$/, '');
-            
-            this.debugLog('最终保存的 Markdown 前 10 行:');
-            this.debugLog(contentMarkdown.split('\n').slice(0, 10).map((line, i) => `${i}: [${line}]`).join('\n'));
-            this.debugLog('最终 Markdown 后 10 行:');
-            this.debugLog(contentMarkdown.split('\n').slice(-10).map((line, i) => `${i}: [${line}]`).join('\n'));
-            this.debugLog('最终 Markdown 长度:', contentMarkdown.length);
-            this.debugLog('最终 Markdown 的前 50 个字符（带转义）:', JSON.stringify(contentMarkdown.substring(0, 50)));
-            this.debugLog('最终 Markdown 的后 50 个字符（带转义）:', JSON.stringify(contentMarkdown.substring(contentMarkdown.length - 50)));
-            this.debugLog('=== 调试结束 ===');
-            
-            // 如果有内容，则添加到文档
-            // 由于已经删除了所有子块，直接使用 prependBlock
-            if (contentMarkdown) {
-                await api.prependBlock('markdown', contentMarkdown, docId);
-            }
-            
-            showMessage('保存成功！', 2000, 'info');
-            
+
+            await this.syncDocMindMapChanges(this.docMindMap.getData(), docId, false);
+
+            showMessage('??????????????', 2000, 'info');
+
         } catch (error) {
-            this.debugError('保存失败:', error);
-            showMessage(`保存失败: ${error.message}`, 3000, 'error');
+            this.debugError('????:', error);
+            showMessage(`????: ${error.message}`, 3000, 'error');
         }
     }
 
     /**
-     * 处理思维导图中的图片：将base64图片上传到思源assets文件夹
-     * @param data 思维导图数据
-     * @param docId 文档ID
+     * ????????????base64???????assets???
+     * @param data ??????
+     * @param docId ??ID
      */
-    async processImagesInMindMap(data: any, docId: string) {
+    
+async processImagesInMindMap(data: any, docId: string) {
         if (!data) return;
         
         let imageCounter = 0; // 用于确保文件名唯一性
@@ -4097,6 +4150,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
                         this.docMindMap.destroy();
                         this.docMindMap = null;
                     }
+                    this.docMindMapNodeIndex = new Map();
                 }
             });
 
@@ -4135,7 +4189,8 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 } as any);
 
                 this.bindDocMindMapToolbarEvents(docId, originalData);
-                this.bindDocMindMapEditEvents();
+                this.docMindMapNodeIndex = this.buildDocMindMapIndex(this.docMindMap.getData());
+                this.bindDocMindMapEditEvents(docId);
             }, 100);
 
         } catch (error) {
