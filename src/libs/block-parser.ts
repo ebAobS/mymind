@@ -113,6 +113,9 @@ function extractBlockContent(kramdown: string, blockSubType?: BlockSubType): { t
     // 移除思源 IAL 属性块（例如 {: id="xxx" updated="xxx"}）
     text = text.replace(/\{:[^}]*\}/g, "").trim();
 
+    // 移除标题标记（# 前缀）
+    text = text.replace(/^#{1,6}\s+/, "");
+
     if (blockSubType?.startsWith("h")) {
         text = text.replace(/^#+\s*/, "");
     } else if (/^(?:[-*+]|\d+\.)\s+/.test(text)) {
