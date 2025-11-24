@@ -137,101 +137,156 @@ function extractBlockContent(kramdown: string, blockSubType?: BlockSubType): { t
     return { text: text || "空白块", image };
 }
 
-async function expandListContainer(block: IResGetChildBlock, visited: Set<string>): Promise<MindMapNode[]> {
-    const results: MindMapNode[] = [];
-    if (!block || !block.id) return results;
-    if (visited.has(block.id)) return results;
-    visited.add(block.id);
+function getHeadingLevel(subtype?: BlockSubType): number | null {
+    if (!subtype) return null;
+    if (subtype.startsWith("h")) {
+        const n = parseInt(subtype.slice(1), 10);
+        return isNaN(n) ? null : n;
+    }
+    return null;
+}
 
-    const listChildren = await api.getChildBlocks(block.id);
-    if (!listChildren || listChildren.length === 0) return results;
+function getHeadingLevelFromKramdown(kramdown?: string): number | null {
+    if (!kramdown) return null;
+    const lines = kramdown.split("\n").map((l) => l.trim());
+    const first = lines.find((l) => l.length > 0);
+    if (!first) return null;
+    const m = first.match(/^(#{1,6})\s+/);
+    if (m) {
+        return m[1].length;
+    }
+    return null;
+}
 
-    const seenIds = new Set<string>();
-    for (const child of listChildren) {
-        if (!child || !child.id || seenIds.has(child.id)) continue;
-        seenIds.add(child.id);
+interface FlatNode {
+    level: number;
+    node: MindMapNode;
+}
 
-        if (child.type === "l") {
-            const nested = await expandListContainer(child, visited);
-            results.push(...nested);
+async function collectBlocks(
+    blocks: IResGetChildBlock[] | undefined,
+    listDepth: number,
+    maxHeadingLevel: number,
+    visited: Set<string>,
+    acc: FlatNode[],
+    currentHeadingLevel: number
+): Promise<void> {
+    if (!blocks || blocks.length === 0) return;
+
+    for (const block of blocks) {
+        if (!block || !block.id) continue;
+        if (visited.has(block.id)) continue;
+        visited.add(block.id);
+
+        // 列表容器仅用于缩进，不作为节点
+        if (block.type === "l") {
+            const children = await api.getChildBlocks(block.id);
+            await collectBlocks(children, listDepth + 1, maxHeadingLevel, visited, acc, currentHeadingLevel);
             continue;
         }
 
-        const childNode = await buildMindMapNodeFromBlock(child, visited);
-        if (childNode) {
-            results.push(childNode);
+        // 跳过段落块，避免冗余内容
+        if (block.type === "p") {
+            continue;
         }
-    }
 
-    return results;
+        const kramdown = await api.getBlockKramdown(block.id);
+        const { text, image } = extractBlockContent(kramdown?.kramdown || "", block.subtype);
+
+        // 如果既没有文本也没有图片，跳过
+        if (!text && !image) {
+            continue;
+        }
+
+        // 计算层级：标题优先，其次列表缩进
+        const explicitHeading =
+            getHeadingLevel(block.subtype) ?? getHeadingLevelFromKramdown(kramdown?.kramdown);
+        let nodeHeadingLevel = currentHeadingLevel;
+        let nodeListDepth = listDepth;
+        let nodeLevelForTree: number;
+        let blockType: BlockType | string | undefined = block.type;
+        let blockSubType: BlockSubType | string | undefined = block.subtype;
+
+        if (explicitHeading !== null) {
+            nodeHeadingLevel = Math.min(explicitHeading, maxHeadingLevel);
+            nodeListDepth = 0;
+            blockType = "h";
+            blockSubType = `h${nodeHeadingLevel}`;
+        } else if (currentHeadingLevel < maxHeadingLevel) {
+            // 默认提升为下一级标题
+            nodeHeadingLevel = currentHeadingLevel + 1;
+            nodeListDepth = 0;
+            blockType = "h";
+            blockSubType = `h${nodeHeadingLevel}`;
+        } else {
+            // 已达到最大标题级别，进入列表层级
+            blockType = "i";
+            blockSubType = "list";
+            nodeListDepth = listDepth;
+        }
+
+        if (blockType === "h" && nodeHeadingLevel !== null) {
+            nodeLevelForTree = nodeHeadingLevel - 1;
+        } else {
+            // 列表与其他块排在标题之后
+            nodeLevelForTree = maxHeadingLevel + nodeListDepth;
+        }
+
+        const node: MindMapNode = {
+            data: {
+                text: text || block.id,
+                uid: block.id,
+                id: block.id,
+                blockId: block.id,
+                blockType: blockType as any,
+                blockSubType: blockSubType as any,
+                richText: false,
+            },
+            children: [],
+        };
+
+        if (image) {
+            node.data.image = image;
+            node.data.imageSize = { width: 300, height: 300, custom: false };
+        }
+
+        acc.push({ level: nodeLevelForTree, node });
+
+        // 递归处理子块
+        const children = await api.getChildBlocks(block.id);
+        const nextHeadingLevel = blockType === "h" && nodeHeadingLevel !== null ? nodeHeadingLevel : currentHeadingLevel;
+        const nextListDepth = blockType === "i" ? nodeListDepth + 1 : 0;
+        await collectBlocks(children, nextListDepth, maxHeadingLevel, visited, acc, nextHeadingLevel);
+    }
 }
 
-async function buildMindMapNodeFromBlock(block: IResGetChildBlock, visited: Set<string>): Promise<MindMapNode | null> {
-    if (!block || !block.id) return null;
+function buildTreeFromFlat(root: MindMapNode, flatNodes: FlatNode[]): MindMapNode {
+    const stack: Array<{ level: number; node: MindMapNode }> = [{ level: -1, node: root }];
 
-    if (visited.has(block.id)) {
-        return null;
-    }
-    visited.add(block.id);
-
-    const kramdown = await api.getBlockKramdown(block.id);
-    const { text, image } = extractBlockContent(kramdown?.kramdown || "", block.subtype);
-    const childrenBlocks = await api.getChildBlocks(block.id);
-
-    const node: MindMapNode = {
-        data: {
-            text: text || block.id,
-            uid: block.id,
-            id: block.id,
-            blockId: block.id,
-            blockType: block.type,
-            blockSubType: block.subtype,
-            richText: false,
-        },
-        children: [],
-    };
-
-    if (image) {
-        node.data.image = image;
-        node.data.imageSize = { width: 300, height: 300, custom: false };
-    }
-
-    if (childrenBlocks && childrenBlocks.length > 0) {
-        const isListItem = block.type === "i";
-        const childNodes: MindMapNode[] = [];
-        const seenChildIds = new Set<string>();
-        for (const child of childrenBlocks) {
-            if (!child || !child.id || child.id === block.id) continue;
-            if (seenChildIds.has(child.id)) continue;
-            seenChildIds.add(child.id);
-
-            // 列表项内部的文本段（p）会重复父节点内容，跳过
-            if (isListItem && child.type === "p") {
-                continue;
-            }
-
-            if (child.type === "l") {
-                const listChildren = await expandListContainer(child, visited);
-                childNodes.push(...listChildren);
-                continue;
-            }
-
-            const childNode = await buildMindMapNodeFromBlock(child, visited);
-            if (childNode) {
-                childNodes.push(childNode);
-            }
+    for (const { level, node } of flatNodes) {
+        while (stack.length > 0 && level <= stack[stack.length - 1].level) {
+            stack.pop();
         }
-        node.children = childNodes;
+        const parent = stack[stack.length - 1].node;
+        if (!parent.children) parent.children = [];
+        parent.children.push(node);
+        stack.push({ level, node });
     }
 
-    return node;
+    return root;
 }
 
-export async function parseDocumentBlocksToMindMap(docId: string, docTitle: string): Promise<MindMapNode> {
+export async function parseDocumentBlocksToMindMap(
+    docId: string,
+    docTitle: string,
+    maxHeadingLevel: number = 6
+): Promise<MindMapNode> {
     try {
         const rootChildren = await api.getChildBlocks(docId);
-        const visited = new Set<string>();
-        visited.add(docId);
+        const visited = new Set<string>([docId]);
+
+        const flatNodes: FlatNode[] = [];
+        await collectBlocks(rootChildren, 0, maxHeadingLevel, visited, flatNodes, 0);
 
         const rootNode: MindMapNode = {
             data: {
@@ -245,35 +300,11 @@ export async function parseDocumentBlocksToMindMap(docId: string, docTitle: stri
             children: [],
         };
 
-        if (rootChildren && rootChildren.length > 0) {
-            const childNodes: MindMapNode[] = [];
-            const seenRootIds = new Set<string>();
-            for (const block of rootChildren) {
-                if (!block || !block.id || visited.has(block.id)) {
-                    continue;
-                }
-                if (seenRootIds.has(block.id)) continue;
-                seenRootIds.add(block.id);
-
-                if (block.type === "l") {
-                    const listChildren = await expandListContainer(block, visited);
-                    childNodes.push(...listChildren);
-                    continue;
-                }
-
-                const childNode = await buildMindMapNodeFromBlock(block, visited);
-                if (childNode) {
-                    childNodes.push(childNode);
-                }
-            }
-            rootNode.children = childNodes;
-        }
-
-        await updateImageSizes(rootNode);
-
-        return rootNode;
+        const tree = buildTreeFromFlat(rootNode, flatNodes);
+        await updateImageSizes(tree);
+        return tree;
     } catch (error) {
-        console.error("??????:", error);
+        console.error("解析文档失败:", error);
         return {
             data: {
                 text: docTitle,
@@ -284,7 +315,7 @@ export async function parseDocumentBlocksToMindMap(docId: string, docTitle: stri
             children: [
                 {
                     data: {
-                        text: "????: " + (error as Error).message,
+                        text: "解析失败: " + (error as Error).message,
                         uid: "error-hint",
                     },
                 },
