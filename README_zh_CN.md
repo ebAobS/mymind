@@ -1,8 +1,8 @@
 <div class="sy__outline" style="max-width: 800px; margin: 0 auto;">
     <div style="text-align: center; padding: 2em; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 12px;">
-        <h1 style="color: white; margin: 0; font-size: 2.2em;">🧠 MyMind - 多维思维导图</h1>
-        <div style="color: rgba(255,255,255,0.9); margin-top: 0.5em; font-size: 1.1em;">全方位可视化展示思源笔记文档结构的思维导图插件</div>
-        <div style="color: #ffd700; margin-top: 0.8em; font-size: 1.2em; font-weight: bold; text-shadow: 0 0 10px rgba(255,215,0,0.5);">🆓 永久免费开源</div>
+        <h1 style="color: white; margin: 0; font-size: 2.2em;">🧠 MyMind - 多维思维导图（已停止维护）</h1>
+        <div style="color: rgba(255,255,255,0.9); margin-top: 0.5em; font-size: 1.1em;">多维思维导图插件的最终归档版本（v9.9.9）</div>
+        <div style="color: #ffd700; margin-top: 0.8em; font-size: 1.1em; font-weight: bold; text-shadow: 0 0 10px rgba(255,215,0,0.5);">⚠️ 维护于 2025-11-26 终止 · 代码库将长期保留</div>
         <div style="margin-top: 1.5em; display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">
             <a href="https://github.com/ebAobS/mymind/blob/main/CHANGELOG.md"
                style="padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; border-radius: 6px; text-decoration: none; font-size: 0.9em;">🗓 更新日志</a>
@@ -11,6 +11,16 @@
             <a href="https://github.com/ebAobS/mymind"
                style="padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; border-radius: 6px; text-decoration: none; font-size: 0.9em;">⭐ GitHub</a>
         </div>
+    </div>
+    <div style="margin-top: 1.5em; padding: 1.5em; background: linear-gradient(135deg, #fee2e2, #ffe4e6); border: 1px solid #f87171; border-radius: 8px; box-shadow: 0 4px 12px rgba(248,113,113,0.15);">
+        <h2 style="color: #b91c1c; margin: 0 0 1em; text-align: center; font-size: 1.3em;">📢 维护状态公告（2025-11-26）</h2>
+        <ul style="margin: 0; padding-left: 1.2em; color: #7f1d1d;">
+            <li style="margin: 0.5em 0;">v9.9.9 为最终版本，因学业压力大、时间和精力有限，作者无法继续维护。</li>
+            <li style="margin: 0.5em 0;">同类插件 kmind 已涵盖全部功能且持续迭代，重复造轮子的意义不大；虽然 kmind 需付费，但功能强大，值得支持。</li>
+            <li style="margin: 0.5em 0;">代码仓库与发布包不会删除，大家可以无限期使用当前版本或自行 Fork 维护。</li>
+            <li style="margin: 0.5em 0;">曾捐赠的用户请添加微信 <code>ebAobS</code>，携带捐赠截图即可退款。</li>
+            <li style="margin: 0.5em 0;">如希望接手维护，也请通过同一微信联系，项目可免费转让。</li>
+        </ul>
     </div>
     <!-- 项目信息 -->
     <div style="margin-top: 1.5em; padding: 1.5em; background: linear-gradient(135deg, #fffbeb, #fef3c7); border: 1px solid #fbbf24; border-radius: 8px; box-shadow: 0 4px 12px rgba(245,158,11,0.15);">
@@ -214,18 +224,12 @@
     </div>
     <!-- 加入交流群 & 支持作者 -->
     <div style="margin-top: 1.5em; padding: 1.5em; background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 2px solid #0ea5e9; border-radius: 8px; box-shadow: 0 4px 12px rgba(14,165,233,0.25);">
-        <h2 style="color: #0ea5e9; margin: 0 0 1em; text-align: center; font-size: 1.4em;">💬 加入交流群</h2>
-        <div style="background: white; padding: 1.5em; border-radius: 8px; border-left: 4px solid #0ea5e9; text-align: center;">
+        <h2 style="color: #0ea5e9; margin: 0 0 1em; text-align: center; font-size: 1.4em;">💬 联系方式</h2>
+        <div style="background: white; padding: 1.5em; border-radius: 8px; border-left: 4px solid #0ea5e9; text-align: left;">
             <p style="margin: 0.5em 0; font-size: 1.1em; color: #0369a1;"><strong>📱 微信：ebAobS</strong></p>
-            <p style="margin: 0.5em 0; color: #666;">欢迎加入交流群，获取最新动态、功能反馈和技术支持！</p>
-            <div style="margin: 1em 0; padding: 1em; background: linear-gradient(135deg, #fef3f2, #fee2e2); border-radius: 8px; border: 1px solid #fca5a5;">
-                <p style="margin: 0.5em 0; font-size: 1.1em; color: #dc2626;"><strong>🫧 支持作者</strong></p>
-                <p style="margin: 0.5em 0; color: #666;">如果 MyMind 对您有帮助，欢迎支持作者持续开发：</p>
-                <img src="https://i0.hdslb.com/bfs/openplatform/12bb6dd415d52c76318b4fb391f179e69d263a54.png@1e_1c.webp"
-                     alt="打赏二维码"
-                     style="width: 200px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                <p style="margin: 0.5em 0; color: #666; font-size: 0.9em;">微信/支付宝</p>
-            </div>
+            <p style="margin: 0.5em 0; color: #444;">• 曾经捐赠的朋友：请添加微信并附上捐赠截图，可全额退款。</p>
+            <p style="margin: 0.5em 0; color: #444;">• 想接手维护的开发者：欢迎联系，项目会免费转让。</p>
+            <p style="margin: 0.5em 0; color: #444;">• 普通用户：依旧可以无限期使用 v9.9.9，也可自行 Fork 继续开发。</p>
         </div>
     </div>
     <!-- 更新日志 -->

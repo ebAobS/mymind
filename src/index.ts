@@ -77,9 +77,6 @@ interface MindMapNode {
         text: string;
         uid?: string;  // simple-mind-map 使用 uid 作为节点唯一标识
         id?: string;
-        blockId?: string;
-        blockType?: string;
-        blockSubType?: string;
         notebookId?: string;
         hpath?: string;
         path?: string;  // 文件系统路径
@@ -90,27 +87,12 @@ interface MindMapNode {
     };
     children?: MindMapNode[];
 }
-interface DocMindMapNodeInfo {
-    uid: string;
-    blockId?: string;
-    text: string;
-    parentUid?: string | null;
-    previousUid?: string | null;
-    blockType?: string;
-    blockSubType?: string;
-    image?: string;
-    headingLevel?: number;
-    listDepth?: number;
-}
-
-
 
 export default class SiYuanDocTreePlugin extends Plugin {
 
     private settingUtils: SettingUtils;
     private mindMap: any = null;
     private docMindMap: any = null; // 文档思维导图实例
-    private docMindMapNodeIndex: Map<string, DocMindMapNodeInfo> = new Map(); // ??????????????
     private lastNodeMap: Map<string, any> = new Map(); // 用于跟踪节点变化
     private embeddedMindMaps: Map<string, any> = new Map(); // 嵌入的思维导图实例
     private isInitializing: boolean = false; // 标记是否正在初始化，防止初始渲染时触发重命名
@@ -2087,7 +2069,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
             showMessage('正在解析文档块结构...', 2000, 'info');
 
             // 使用新的块解析器，获取完整的文档块结构
-            const mindMapData = await parseDocumentBlocksToMindMap(docId, title, this.settingUtils.get(headingLevelsName) || 6);
+            const mindMapData = await parseDocumentBlocksToMindMap(docId, title);
 
             // 创建对话框
             const dialog = new Dialog({
@@ -2140,7 +2122,6 @@ export default class SiYuanDocTreePlugin extends Plugin {
                         this.docMindMap.destroy();
                         this.docMindMap = null;
                     }
-                    this.docMindMapNodeIndex = new Map();
                 }
             });
 
@@ -2218,11 +2199,8 @@ export default class SiYuanDocTreePlugin extends Plugin {
                 // 绑定工具栏事件
                 this.bindDocMindMapToolbarEvents(docId, originalData);
                 
-                // 初始化节点映射并绑定编辑事件
-                const idx = this.buildDocMindMapIndex(this.docMindMap.getData());
-                this.normalizeDocMindMapIndex(idx, docId);
-                this.docMindMapNodeIndex = idx;
-                this.bindDocMindMapEditEvents(docId);
+                // 绑定编辑事件监听
+                this.bindDocMindMapEditEvents();
             }, 100);
 
         } catch (error) {
@@ -2234,309 +2212,6 @@ export default class SiYuanDocTreePlugin extends Plugin {
     /**
      * 绑定文档思维导图工具栏事件
      */
-    private buildDocMindMapIndex(data: any): Map<string, DocMindMapNodeInfo> {
-        const map = new Map<string, DocMindMapNodeInfo>();
-
-        const traverse = (node: any, parentUid: string | null, previousUid: string | null) => {
-            if (!node || !node.data) return;
-            const uid = node.data.uid || node.data.id;
-            if (!uid) return;
-
-            const info: DocMindMapNodeInfo = {
-                uid,
-                blockId: node.data.blockId || node.data.id,
-                text: this.stripHtmlTags(node.data.text || ''),
-                parentUid,
-                previousUid,
-                blockType: node.data.blockType,
-                blockSubType: node.data.blockSubType,
-                image: node.data.image
-            };
-            map.set(uid, info);
-
-            if (node.children && node.children.length > 0) {
-                let prev: string | null = null;
-                for (const child of node.children) {
-                    traverse(child, uid, prev);
-                    const childUid = child?.data?.uid || child?.data?.id || null;
-                    prev = childUid || prev;
-                }
-            }
-        };
-
-        traverse(data, null, null);
-        return map;
-    }
-
-    private parseHeadingLevel(subtype?: string): number | null {
-        if (!subtype) return null;
-        if (subtype.startsWith('h')) {
-            const n = parseInt(subtype.slice(1), 10);
-            return isNaN(n) ? null : n;
-        }
-        return null;
-    }
-
-    private normalizeDocMindMapIndex(index: Map<string, DocMindMapNodeInfo>, docId: string): void {
-        const maxHeadingLevel = this.settingUtils.get(headingLevelsName) || 6;
-
-        // 构建父子映射，便于按树递归
-        const childrenMap = new Map<string, string[]>();
-        index.forEach((info, uid) => {
-            const p = info.parentUid || docId;
-            if (!childrenMap.has(p)) childrenMap.set(p, []);
-            childrenMap.get(p)!.push(uid);
-        });
-
-        const ensureType = (info: DocMindMapNodeInfo, parentHeading: number | null, parentListDepth: number, parentIsList: boolean) => {
-            const currentHeading = this.parseHeadingLevel(info.blockSubType);
-            const isList = info.blockType === 'i' || info.blockType === 'l';
-
-            if (currentHeading !== null) {
-                info.blockType = 'h';
-                info.blockSubType = `h${currentHeading}`;
-                info.headingLevel = currentHeading;
-                info.listDepth = 0;
-                return;
-            }
-
-            if (parentIsList || isList) {
-                const depth = info.listDepth ?? parentListDepth + 1;
-                info.blockType = 'i';
-                info.blockSubType = 'list';
-                info.listDepth = depth;
-                info.headingLevel = undefined;
-                return;
-            }
-
-            if (parentHeading !== null && parentHeading < maxHeadingLevel) {
-                const h = parentHeading + 1;
-                info.blockType = 'h';
-                info.blockSubType = `h${h}`;
-                info.headingLevel = h;
-                info.listDepth = 0;
-                return;
-            }
-
-            if (parentHeading !== null && parentHeading >= maxHeadingLevel) {
-                info.blockType = 'i';
-                info.blockSubType = 'list';
-                info.listDepth = Math.max(parentListDepth, 0);
-                info.headingLevel = undefined;
-                return;
-            }
-
-            // 默认作为一级标题
-            info.blockType = 'h';
-            info.blockSubType = 'h1';
-            info.headingLevel = 1;
-            info.listDepth = 0;
-        };
-
-        const visitedSet = new Set<string>();
-        const stack: Array<{ uid: string; parentHeading: number | null; parentListDepth: number; parentIsList: boolean }> = [];
-        (childrenMap.get(docId) || []).forEach((child) => {
-            stack.push({ uid: child, parentHeading: null, parentListDepth: 0, parentIsList: false });
-        });
-
-        while (stack.length > 0) {
-            const { uid, parentHeading, parentListDepth, parentIsList } = stack.pop()!;
-            if (!uid || visitedSet.has(uid)) continue;
-            visitedSet.add(uid);
-
-            const info = index.get(uid);
-            if (!info) continue;
-
-            ensureType(info, parentHeading, parentListDepth, parentIsList);
-
-            const currentHeading = this.parseHeadingLevel(info.blockSubType);
-            const currentListDepth = info.blockType === 'i' ? (info.listDepth ?? parentListDepth + 1) : parentListDepth;
-            const nextHeading = currentHeading !== null ? currentHeading : parentHeading;
-            const isList = info.blockType === 'i';
-
-            const children = childrenMap.get(uid) || [];
-            for (const childUid of children) {
-                if (childUid === uid) continue;
-                stack.push({ uid: childUid, parentHeading: nextHeading, parentListDepth: currentListDepth, parentIsList: isList });
-            }
-        }
-    }
-
-    private buildBlockMarkdownFromNode(nodeInfo: DocMindMapNodeInfo): string {
-        const rawText = this.stripHtmlTags(nodeInfo.text || '').replace(/\{:[^}]*\}/g, '').trim();
-        const imagePart = nodeInfo.image ? `${rawText ? '\n\n' : ''}![](${nodeInfo.image})` : '';
-        const combined = `${rawText}${imagePart}`.trim();
-
-        if (nodeInfo.blockSubType === 'image' && nodeInfo.image) {
-            return `![](${nodeInfo.image})`;
-        }
-
-        if (nodeInfo.blockType === 'h') {
-            const level = nodeInfo.headingLevel ?? parseInt((nodeInfo.blockSubType || '').slice(1), 10);
-            const safeLevel = isNaN(level) ? 1 : Math.min(6, Math.max(1, level));
-            return `${'#'.repeat(safeLevel)} ${combined}`.trim();
-        }
-
-        if (nodeInfo.blockType === 'i' || nodeInfo.blockType === 'l') {
-            // 去掉可能残留的无序列表前缀（含缺少空格的场景），统一再加一个 "- "
-            const content = (rawText || '')
-                .replace(/^\s*[-*+]\s*/, '')
-                .replace(/^(?:[-*+]\s+)+/, '')
-                .trim();
-            const img = nodeInfo.image ? `![](${nodeInfo.image})` : '';
-            if (content && img) return `- ${content} ${img}`.trimEnd();
-            if (!content && img) return `- ${img}`;
-            return `- ${content || ' '}`.trimEnd();
-        }
-
-        if (nodeInfo.blockSubType === 'quote') {
-            return `> ${combined}`.trim();
-        }
-
-        if (nodeInfo.blockSubType === 'code') {
-            return `\`\`\`\n${combined}\n\`\`\``;
-        }
-
-        return combined || ' ';
-    }
-
-    private resolveBlockId(index: Map<string, DocMindMapNodeInfo>, uid: string | null | undefined, docId: string): string | undefined {
-        if (!uid) return docId;
-        if (uid === docId) return docId;
-        const target = index.get(uid);
-        return target?.blockId || docId;
-    }
-
-    /**
-     * 计算插入/移动时的父块与前置块。
-     * 当父块是列表项且没有显式前置节点时，需要把新节点放在父块已有子块之后（如列表项正文所在的段落块）。
-     */
-    private async resolveInsertPosition(
-        info: DocMindMapNodeInfo,
-        index: Map<string, DocMindMapNodeInfo>,
-        docId: string
-    ): Promise<{ parentBlockId?: string; previousBlockId?: string }> {
-        const parentBlockId = this.resolveBlockId(index, info.parentUid, docId);
-        let previousBlockId = info.previousUid ? index.get(info.previousUid)?.blockId : undefined;
-
-        if (!previousBlockId && parentBlockId) {
-            const parentInfo = info.parentUid ? index.get(info.parentUid) : undefined;
-            const parentIsList = parentInfo?.blockType === 'i';
-            if (parentIsList) {
-                try {
-                    const children = await api.getChildBlocks(parentBlockId);
-                    if (children && children.length > 0) {
-                        previousBlockId = children[children.length - 1].id;
-                    }
-                } catch (error) {
-                    this.debugWarn('获取父块子节点失败，回退到默认插入位置:', error);
-                }
-            }
-        }
-
-        return { parentBlockId, previousBlockId };
-    }
-
-    private async createBlockForMindMapNode(info: DocMindMapNodeInfo, index: Map<string, DocMindMapNodeInfo>, docId: string): Promise<void> {
-        const { parentBlockId, previousBlockId } = await this.resolveInsertPosition(info, index, docId);
-        const markdown = this.buildBlockMarkdownFromNode(info);
-
-        const ops = await api.insertBlock('markdown', markdown, undefined, previousBlockId, parentBlockId);
-        const newBlockId =
-            ops?.[0]?.doOperations?.[0]?.id ||
-            (ops?.[0]?.doOperations?.[0]?.data as string | undefined) ||
-            (ops?.[0]?.doOperations?.[0]?.retData as string | undefined);
-
-        if (newBlockId) {
-            info.blockId = newBlockId;
-            const node = this.docMindMap?.renderer?.findNodeByUid?.(info.uid);
-            if (node && node.nodeData && node.nodeData.data) {
-                node.nodeData.data.blockId = newBlockId;
-            }
-            const mapped = index.get(info.uid);
-            if (mapped) {
-                mapped.blockId = newBlockId;
-            }
-        }
-    }
-
-    private async moveBlockForMindMapNode(info: DocMindMapNodeInfo, index: Map<string, DocMindMapNodeInfo>, docId: string): Promise<void> {
-        if (!info.blockId) return;
-        const { parentBlockId, previousBlockId } = await this.resolveInsertPosition(info, index, docId);
-        await api.moveBlock(info.blockId, previousBlockId, parentBlockId);
-    }
-
-    private async updateBlockForMindMapNode(info: DocMindMapNodeInfo): Promise<void> {
-        if (!info.blockId) return;
-        const markdown = this.buildBlockMarkdownFromNode(info);
-        await api.updateBlock('markdown', markdown, info.blockId);
-    }
-
-    private async syncDocMindMapChanges(data: any, docId: string, silent: boolean = true) {
-        if (!data) return;
-
-        await this.processImagesInMindMap(data, docId);
-
-        const newIndex = this.buildDocMindMapIndex(data);
-        this.normalizeDocMindMapIndex(newIndex, docId);
-        if (this.docMindMapNodeIndex.size === 0) {
-            this.docMindMapNodeIndex = newIndex;
-            return;
-        }
-
-        const oldIndex = new Map(this.docMindMapNodeIndex);
-
-        const created: DocMindMapNodeInfo[] = [];
-        const deleted: DocMindMapNodeInfo[] = [];
-        const renamed: Array<{ oldInfo: DocMindMapNodeInfo; newInfo: DocMindMapNodeInfo }> = [];
-        const moved: Array<{ oldInfo: DocMindMapNodeInfo; newInfo: DocMindMapNodeInfo }> = [];
-
-        newIndex.forEach((info, uid) => {
-            if (!oldIndex.has(uid)) {
-                created.push(info);
-            } else {
-                const oldInfo = oldIndex.get(uid)!;
-                if (oldInfo.text !== info.text || oldInfo.image !== info.image) {
-                    renamed.push({ oldInfo, newInfo: info });
-                }
-                if (oldInfo.parentUid !== info.parentUid || oldInfo.previousUid !== info.previousUid) {
-                    moved.push({ oldInfo, newInfo: info });
-                }
-            }
-        });
-
-        oldIndex.forEach((info, uid) => {
-            if (!newIndex.has(uid) && uid !== docId) {
-                deleted.push(info);
-            }
-        });
-
-        if (!silent && (created.length || deleted.length || renamed.length || moved.length)) {
-            showMessage('???????????...', 1500, 'info');
-        }
-
-        for (const info of deleted) {
-            if (info.blockId && info.blockId !== docId) {
-                await api.deleteBlock(info.blockId);
-            }
-        }
-
-        for (const info of created) {
-            await this.createBlockForMindMapNode(info, newIndex, docId);
-        }
-
-        for (const move of moved) {
-            await this.moveBlockForMindMapNode(move.newInfo, newIndex, docId);
-        }
-
-        for (const rename of renamed) {
-            await this.updateBlockForMindMapNode(rename.newInfo);
-        }
-
-        this.docMindMapNodeIndex = newIndex;
-    }
-
-
     bindDocMindMapToolbarEvents(docId: string, originalData: any) {
         // 添加子节点
         const addChildBtn = document.getElementById('docAddChildBtn');
@@ -2595,7 +2270,7 @@ export default class SiYuanDocTreePlugin extends Plugin {
         const saveBtn = document.getElementById('docSaveBtn');
         if (saveBtn) {
             saveBtn.addEventListener('click', async () => {
-                await this.saveDocMindMapToDocument(docId);
+                await this.showSaveWarningAndSave(docId);
             });
         }
 
@@ -2605,9 +2280,6 @@ export default class SiYuanDocTreePlugin extends Plugin {
             resetBtn.addEventListener('click', () => {
                 this.docMindMap.setData(JSON.parse(JSON.stringify(originalData)));
                 this.docMindMap.render();
-                const idx = this.buildDocMindMapIndex(this.docMindMap.getData());
-                this.normalizeDocMindMapIndex(idx, docId);
-                this.docMindMapNodeIndex = idx;
                 showMessage('已重置为原始内容', 2000, 'info');
             });
         }
@@ -2640,54 +2312,192 @@ export default class SiYuanDocTreePlugin extends Plugin {
     /**
      * 绑定文档思维导图编辑事件
      */
-    bindDocMindMapEditEvents(docId: string) {
+    bindDocMindMapEditEvents() {
         if (!this.docMindMap) return;
 
-        // ???????????????
-        this.docMindMap.on('data_change', async (data: any) => {
-            await this.syncDocMindMapChanges(data, docId, true);
-        });
-
-        // ???????????
-        this.docMindMap.on('node_dragend', async () => {
-            await this.syncDocMindMapChanges(this.docMindMap.getData(), docId, true);
+        // 监听节点拖拽完成事件
+        this.docMindMap.on('node_dragend', () => {
+            showMessage('节点层级已改变，记得点击保存按钮', 2000, 'info');
         });
     }
-
 
     /**
      * 显示保存警告并保存
      */
     async showSaveWarningAndSave(docId: string) {
-        await this.saveDocMindMapToDocument(docId);
-    }
+        // 检查是否显示警告
+        const showWarning = this.settingUtils.get(showSaveWarningName);
+        
+        if (showWarning !== false) {
+            // 显示警告对话框
+            const dialog = new Dialog({
+                title: "⚠️ 保存警告",
+                content: `
+                    <div class="b3-dialog__content" style="padding: 20px;">
+                        <div style="margin-bottom: 16px; line-height: 1.6;">
+                            <strong style="color: var(--b3-theme-error);">警告：</strong>
+                            将思维导图同步保存至思源文档，将丢失非 Markdown 格式的块，如：
+                        </div>
+                        <ul style="margin-left: 20px; line-height: 1.8; color: var(--b3-theme-on-surface);">
+                            <li>代码块</li>
+                            <li>引用块</li>
+                            <li>表格</li>
+                            <li>其他特殊块类型</li>
+                        </ul>
+                        <div style="margin-top: 16px; line-height: 1.6;">
+                            <strong style="color: var(--b3-theme-primary);">保留内容：</strong>
+                        </div>
+                        <ul style="margin-left: 20px; line-height: 1.8; color: var(--b3-theme-on-surface);">
+                            <li>各级标题块（H1-H6）</li>
+                            <li>无序列表块（支持缩进）</li>
+                            <li>图片</li>
+                            <li>普通段落文本</li>
+                        </ul>
+                        <div style="margin-top: 20px; padding: 12px; background: var(--b3-theme-background-light); border-radius: 4px; border-left: 3px solid var(--b3-theme-primary);">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" id="dontShowAgain" style="margin-right: 8px;">
+                                <span>不再提示此警告</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="b3-dialog__action">
+                        <button class="b3-button b3-button--cancel">取消</button>
+                        <button id="confirmSave" class="b3-button b3-button--text">确认保存</button>
+                    </div>
+                `,
+                width: "500px",
+            });
 
-async saveDocMindMapToDocument(docId: string) {
-        try {
-            showMessage('???????...', 2000, 'info');
-
-            if (!this.docMindMap) {
-                showMessage('???????????', 2000, 'error');
-                return;
-            }
-
-            await this.syncDocMindMapChanges(this.docMindMap.getData(), docId, false);
-
-            showMessage('??????????????', 2000, 'info');
-
-        } catch (error) {
-            this.debugError('????:', error);
-            showMessage(`????: ${error.message}`, 3000, 'error');
+            setTimeout(() => {
+                const confirmBtn = document.getElementById('confirmSave');
+                const dontShowAgainCheckbox = document.getElementById('dontShowAgain') as HTMLInputElement;
+                
+                if (confirmBtn) {
+                    confirmBtn.addEventListener('click', async () => {
+                        // 如果勾选了"不再提示"，保存设置
+                        if (dontShowAgainCheckbox && dontShowAgainCheckbox.checked) {
+                            await this.settingUtils.set(showSaveWarningName, false);
+                        }
+                        
+                        dialog.destroy();
+                        await this.saveDocMindMapToDocument(docId);
+                    });
+                }
+            }, 100);
+        } else {
+            // 不显示警告，直接保存
+            await this.saveDocMindMapToDocument(docId);
         }
     }
 
     /**
-     * ????????????base64???????assets???
-     * @param data ??????
-     * @param docId ??ID
+     * 将思维导图保存到文档
      */
-    
-async processImagesInMindMap(data: any, docId: string) {
+    async saveDocMindMapToDocument(docId: string) {
+        try {
+            showMessage('正在保存到文档...', 2000, 'info');
+            
+            // 1. 获取思维导图数据
+            const data = this.docMindMap.getData();
+            
+            // 2. 处理图片：将base64图片上传到assets文件夹
+            await this.processImagesInMindMap(data, docId);
+            
+            // 3. 转换为纯净的 Markdown（去除所有 HTML）
+            const markdown = this.convertMindMapToCleanMarkdown(data);
+            
+            // 4. 获取文档的所有直接子块
+            const childBlocks = await api.getChildBlocks(docId);
+            
+            // 5. 删除所有子块
+            if (childBlocks && childBlocks.length > 0) {
+                for (const block of childBlocks) {
+                    await api.deleteBlock(block.id);
+                }
+            }
+            
+            // 6. 添加新的 Markdown 内容到文档
+            // 需要移除第一行的 H1 标题（因为文档本身就是标题）
+            this.debugLog('=== 调试保存过程 ===');
+            this.debugLog('原始 Markdown:');
+            this.debugLog(markdown);
+            this.debugLog('前 20 行:');
+            this.debugLog(markdown.split('\n').slice(0, 20).map((line, i) => `${i}: [${line}]`).join('\n'));
+            
+            const lines = markdown.split('\n');
+            let contentLines = lines;
+            
+            // 如果第一行是 H1 标题，则移除它
+            if (lines.length > 0 && lines[0].startsWith('# ')) {
+                this.debugLog('移除第一行 H1:', lines[0]);
+                contentLines = lines.slice(1);
+            }
+            
+            this.debugLog('移除 H1 后的前 10 行:');
+            this.debugLog(contentLines.slice(0, 10).map((line, i) => `${i}: [${line}]`).join('\n'));
+            
+            // 移除开头的所有空行
+            let removedCount = 0;
+            while (contentLines.length > 0 && contentLines[0].trim() === '') {
+                contentLines.shift();
+                removedCount++;
+            }
+            this.debugLog('移除了', removedCount, '个开头空行');
+            
+            // 如果第一行是标题且第二行是空行，移除第二行
+            // 这样可以避免文档开头出现空行
+            if (contentLines.length > 1 && 
+                contentLines[0].match(/^#{1,6}\s+/) && 
+                contentLines[1].trim() === '') {
+                this.debugLog('移除第一个标题后的空行');
+                contentLines.splice(1, 1);
+            }
+            
+            // 移除结尾的所有空行
+            let removedEndCount = 0;
+            while (contentLines.length > 0 && contentLines[contentLines.length - 1].trim() === '') {
+                contentLines.pop();
+                removedEndCount++;
+            }
+            this.debugLog('移除了', removedEndCount, '个结尾空行');
+            
+            let contentMarkdown = contentLines.join('\n');
+            
+            // 确保 Markdown 不以换行符开头
+            contentMarkdown = contentMarkdown.replace(/^\n+/, '');
+            
+            // 确保 Markdown 不以换行符结尾（彻底清理）
+            contentMarkdown = contentMarkdown.replace(/\n+$/, '');
+            
+            this.debugLog('最终保存的 Markdown 前 10 行:');
+            this.debugLog(contentMarkdown.split('\n').slice(0, 10).map((line, i) => `${i}: [${line}]`).join('\n'));
+            this.debugLog('最终 Markdown 后 10 行:');
+            this.debugLog(contentMarkdown.split('\n').slice(-10).map((line, i) => `${i}: [${line}]`).join('\n'));
+            this.debugLog('最终 Markdown 长度:', contentMarkdown.length);
+            this.debugLog('最终 Markdown 的前 50 个字符（带转义）:', JSON.stringify(contentMarkdown.substring(0, 50)));
+            this.debugLog('最终 Markdown 的后 50 个字符（带转义）:', JSON.stringify(contentMarkdown.substring(contentMarkdown.length - 50)));
+            this.debugLog('=== 调试结束 ===');
+            
+            // 如果有内容，则添加到文档
+            // 由于已经删除了所有子块，直接使用 prependBlock
+            if (contentMarkdown) {
+                await api.prependBlock('markdown', contentMarkdown, docId);
+            }
+            
+            showMessage('保存成功！', 2000, 'info');
+            
+        } catch (error) {
+            this.debugError('保存失败:', error);
+            showMessage(`保存失败: ${error.message}`, 3000, 'error');
+        }
+    }
+
+    /**
+     * 处理思维导图中的图片：将base64图片上传到思源assets文件夹
+     * @param data 思维导图数据
+     * @param docId 文档ID
+     */
+    async processImagesInMindMap(data: any, docId: string) {
         if (!data) return;
         
         let imageCounter = 0; // 用于确保文件名唯一性
@@ -3644,7 +3454,7 @@ async processImagesInMindMap(data: any, docId: string) {
 
             this.debugLog('开始获取思维导图数据...');
             // 获取思维导图数据
-            const mindMapData = await parseDocumentBlocksToMindMap(docId, docTitle, this.settingUtils.get(headingLevelsName) || 6);
+            const mindMapData = await parseDocumentBlocksToMindMap(docId, docTitle);
             this.debugLog('思维导图数据获取成功');
 
             // 移除加载提示
@@ -4247,7 +4057,7 @@ async processImagesInMindMap(data: any, docId: string) {
         try {
             showMessage('正在加载思维导图...', 2000, 'info');
 
-            const mindMapData = await parseDocumentBlocksToMindMap(docId, docTitle, this.settingUtils.get(headingLevelsName) || 6);
+            const mindMapData = await parseDocumentBlocksToMindMap(docId, docTitle);
             const originalData = JSON.parse(JSON.stringify(mindMapData));
 
             const dialog = new Dialog({
@@ -4287,7 +4097,6 @@ async processImagesInMindMap(data: any, docId: string) {
                         this.docMindMap.destroy();
                         this.docMindMap = null;
                     }
-                    this.docMindMapNodeIndex = new Map();
                 }
             });
 
@@ -4326,10 +4135,7 @@ async processImagesInMindMap(data: any, docId: string) {
                 } as any);
 
                 this.bindDocMindMapToolbarEvents(docId, originalData);
-                const idx = this.buildDocMindMapIndex(this.docMindMap.getData());
-                this.normalizeDocMindMapIndex(idx, docId);
-                this.docMindMapNodeIndex = idx;
-                this.bindDocMindMapEditEvents(docId);
+                this.bindDocMindMapEditEvents();
             }, 100);
 
         } catch (error) {

@@ -1,8 +1,8 @@
 <div class="sy__outline" style="max-width: 800px; margin: 0 auto;">
     <div style="text-align: center; padding: 2em; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 12px;">
-        <h1 style="color: white; margin: 0; font-size: 2.2em;">🧠 MyMind - Multi-dimensional Mind Map</h1>
-        <div style="color: rgba(255,255,255,0.9); margin-top: 0.5em; font-size: 1.1em;">A comprehensive mind mapping plugin for visualizing SiYuan Note document structures from multiple perspectives</div>
-        <div style="color: #ffd700; margin-top: 0.8em; font-size: 1.2em; font-weight: bold; text-shadow: 0 0 10px rgba(255,215,0,0.5);">🆓 PERMANENTLY FREE & OPEN SOURCE</div>
+        <h1 style="color: white; margin: 0; font-size: 2.2em;">🧠 MyMind - Multi-dimensional Mind Map (Maintenance Ended)</h1>
+        <div style="color: rgba(255,255,255,0.9); margin-top: 0.5em; font-size: 1.1em;">Final archived release (v9.9.9) of the multi-dimensional mind map plugin for SiYuan Note</div>
+        <div style="color: #ffd700; margin-top: 0.8em; font-size: 1.1em; font-weight: bold; text-shadow: 0 0 10px rgba(255,215,0,0.5);">⚠️ Maintenance stopped on 2025-11-26 · Code stays available forever</div>
         <div style="margin-top: 1.5em; display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">
             <a href="https://github.com/ebAobS/mymind/blob/main/CHANGELOG.md"
                style="padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; border-radius: 6px; text-decoration: none; font-size: 0.9em;">🗓 Changelog</a>
@@ -11,6 +11,16 @@
             <a href="https://github.com/ebAobS/mymind"
                style="padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; border-radius: 6px; text-decoration: none; font-size: 0.9em;">⭐ GitHub</a>
         </div>
+    </div>
+    <div style="margin-top: 1.5em; padding: 1.5em; background: linear-gradient(135deg, #fee2e2, #ffe4e6); border: 1px solid #f87171; border-radius: 8px; box-shadow: 0 4px 12px rgba(248,113,113,0.15);">
+        <h2 style="color: #b91c1c; margin: 0 0 1em; text-align: center; font-size: 1.3em;">📢 Maintenance Notice (2025-11-26)</h2>
+        <ul style="margin: 0; padding-left: 1.2em; color: #7f1d1d;">
+            <li style="margin: 0.5em 0;">Development is officially stopped after v9.9.9 because of limited time/energy caused by academic pressure.</li>
+            <li style="margin: 0.5em 0;">The kmind plugin already covers all features in a more sustainable way—even though kmind is paid, it is powerful and worth supporting, so duplicating effort here has little meaning.</li>
+            <li style="margin: 0.5em 0;">The repository and release remain online indefinitely—you can keep using the current version or fork it as you wish.</li>
+            <li style="margin: 0.5em 0;">If you donated before, please add WeChat <code>ebAobS</code> with your donation screenshot for a refund.</li>
+            <li style="margin: 0.5em 0;">Anyone who wants to take over maintenance is welcome to contact via the same WeChat account; the project will be transferred for free.</li>
+        </ul>
     </div>
     <!-- Project Information -->
     <div style="margin-top: 1.5em; padding: 1.5em; background: linear-gradient(135deg, #fffbeb, #fef3c7); border: 1px solid #fbbf24; border-radius: 8px; box-shadow: 0 4px 12px rgba(245,158,11,0.15);">
@@ -214,18 +224,12 @@
     </div>
     <!-- Join Community & Support -->
     <div style="margin-top: 1.5em; padding: 1.5em; background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 2px solid #0ea5e9; border-radius: 8px; box-shadow: 0 4px 12px rgba(14,165,233,0.25);">
-        <h2 style="color: #0ea5e9; margin: 0 0 1em; text-align: center; font-size: 1.4em;">💬 Join Our Community</h2>
-        <div style="background: white; padding: 1.5em; border-radius: 8px; border-left: 4px solid #0ea5e9; text-align: center;">
+        <h2 style="color: #0ea5e9; margin: 0 0 1em; text-align: center; font-size: 1.4em;">💬 Contact & Next Steps</h2>
+        <div style="background: white; padding: 1.5em; border-radius: 8px; border-left: 4px solid #0ea5e9; text-align: left;">
             <p style="margin: 0.5em 0; font-size: 1.1em; color: #0369a1;"><strong>📱 WeChat: ebAobS</strong></p>
-            <p style="margin: 0.5em 0; color: #666;">Join our discussion group for feedback, feature requests, and community support!</p>
-            <div style="margin: 1em 0; padding: 1em; background: linear-gradient(135deg, #fef3f2, #fee2e2); border-radius: 8px; border: 1px solid #fca5a5;">
-                <p style="margin: 0.5em 0; font-size: 1.1em; color: #dc2626;"><strong>🫧 Support the Author</strong></p>
-                <p style="margin: 0.5em 0; color: #666;">If MyMind helps your work and study, consider supporting the author:</p>
-                <img src="https://i0.hdslb.com/bfs/openplatform/12bb6dd415d52c76318b4fb391f179e69d263a54.png@1e_1c.webp"
-                     alt="Donation QR Code"
-                     style="width: 200px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                <p style="margin: 0.5em 0; color: #666; font-size: 0.9em;">WeChat/Alipay</p>
-            </div>
+            <p style="margin: 0.5em 0; color: #444;">• Donors: please add WeChat with your donation screenshot to request a refund.</p>
+            <p style="margin: 0.5em 0; color: #444;">• Maintainers: if you would like to adopt MyMind, contact via WeChat and the project will be transferred for free.</p>
+            <p style="margin: 0.5em 0; color: #444;">• Users: feel free to keep using v9.9.9 indefinitely or fork the repository for self-maintenance.</p>
         </div>
     </div>
     <!-- Changelog -->
